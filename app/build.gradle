@@ -1,0 +1,67 @@
+plugins {
+    id 'com.android.application'
+}
+
+// ---------- release 签名（正式）----------
+// keystore/ 目录（含 signing.properties）已 gitignore，不入库；
+// 若本机没有密钥文件则回退 debug 签名，保证任何环境可构建。
+def keystoreProps = new Properties()
+def keystoreFile = rootProject.file('keystore/mifitnessadaway.keystore')
+def signingPropsFile = rootProject.file('keystore/signing.properties')
+boolean hasSigning = keystoreFile.exists() && signingPropsFile.exists()
+if (hasSigning) {
+    signingPropsFile.withInputStream { keystoreProps.load(it) }
+}
+
+android {
+    namespace 'com.mifitness.adaway'
+    compileSdk 37
+
+    defaultConfig {
+        applicationId "com.mifitness.adaway"
+        minSdk 26
+        targetSdk 35
+        versionCode 17
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        release {
+            if (hasSigning) {
+                storeFile keystoreFile
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig hasSigning ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    packaging {
+        resources {
+            merges += "META-INF/xposed/*"
+            excludes += "**"
+        }
+    }
+}
+
+dependencies {
+    // libxposed 现代 API 102（compileOnly，不打进 APK）
+    compileOnly 'io.github.libxposed:api:102.0.0'
+    // 模块 App 与框架通信（设置页用 RemotePreferences）
+    implementation 'io.github.libxposed:service:102.0.0'
+    // AdAwayModule 的 LiveData getter hook 引用了 androidx.lifecycle.MutableLiveData：
+    // 运行期由目标 App（com.mi.health 自带 lifecycle）提供，仅编译期需要 → compileOnly 不进包
+    compileOnly 'androidx.lifecycle:lifecycle-livedata-core:2.8.7'
+}

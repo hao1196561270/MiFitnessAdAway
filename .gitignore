@@ -1,0 +1,30 @@
+# Gradle / 构建产物
+.gradle/
+build/
+app/build/
+local.properties
+
+# 调试/临时文件
+apk_check/
+apk_check2/
+db_pull/
+dex_check/
+lsposed_logs/
+lsposed_logs2/
+*.sh
+*.sql
+
+# LSPosed 日志包
+LSPosed_*.zip
+
+# 签名密钥（不入库，丢失需重新生成并换签名）
+keystore/
+signing.properties
+
+# 旧版本 APK（release 由 GitHub Releases 承载）
+MiFitnessAdAway-v*.apk
+
+# IDE
+.idea/
+*.iml
+.DS_Store
