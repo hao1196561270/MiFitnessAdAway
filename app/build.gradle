@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.mifitness.adaway'
+    compileSdk 37
+
+    defaultConfig {
+        applicationId "com.mifitness.adaway"
+        minSdk 26
+        targetSdk 35
+        versionCode 17
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    packaging {
+        resources {
+            merges += "META-INF/xposed/*"
+            excludes += "**"
+        }
+    }
+}
+
+dependencies {
+    // libxposed 现代 API 102（compileOnly，不打进 APK）
+    compileOnly 'io.github.libxposed:api:102.0.0'
+    // 模块 App 与框架通信（设置页用 RemotePreferences）
+    implementation 'io.github.libxposed:service:102.0.0'
+    // AdAwayModule 的 LiveData getter hook 引用了 androidx.lifecycle.MutableLiveData：
+    // 运行期由目标 App（com.mi.health 自带 lifecycle）提供，仅编译期需要 → compileOnly 不进包
+    compileOnly 'androidx.lifecycle:lifecycle-livedata-core:2.8.7'
+}
