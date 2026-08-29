@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- libxposed API 102 模块：不再需要 xposedmodule meta-data，
+         模块声明全部位于 META-INF/xposed/（module.prop / java_init.list / scope.list） -->
+    <application
+        android:name=".MiFitnessApp"
+        android:label="MiFitnessAdAway"
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <!-- LSPosed 模块列表中显示的简要功能概述 -->
+        <meta-data
+            android:name="xposeddescription"
+            android:value="移除小米运动健康广告：开屏 / 首页 / 设备 / 运动 / 我的 页面推广卡片，内置开关设置" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
