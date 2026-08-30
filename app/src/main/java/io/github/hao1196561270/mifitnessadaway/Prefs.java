@@ -21,6 +21,7 @@ public final class Prefs {
     public static final String KEY_ENABLE_ANNOUNCE = "enable_announce";
     public static final String KEY_ENABLE_ANTI_DETECT = "enable_anti_detect";
     public static final String KEY_DEBUG_LOG = "debug_log";
+    public static final String KEY_HIDE_ICON = "hide_icon";
 
     private Prefs() {
     }

@@ -109,6 +109,7 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
         addSwitch(root, "公告 banner", Prefs.KEY_ENABLE_ANNOUNCE);
         addSwitch(root, "反 hook 检测", Prefs.KEY_ENABLE_ANTI_DETECT);
         addSwitch(root, "调试日志", Prefs.KEY_DEBUG_LOG);
+        addSwitch(root, "隐藏桌面图标", Prefs.KEY_HIDE_ICON);
 
         setContentView(scroll);
     }
@@ -157,8 +158,35 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
                     mService.getRemotePreferences(Prefs.GROUP).edit()
                             .putBoolean(key, isChecked).apply();
                 }
+                // 隐藏桌面图标：开关开启 = 隐藏，关闭 = 显示（即时生效，无需重启）
+                if (Prefs.KEY_HIDE_ICON.equals(key)) {
+                    applyLauncherIcon(!isChecked);
+                }
             }
         });
+    }
+
+    /**
+     * 设置桌面图标 alias（LauncherAlias）显隐。
+     * 注意：参数为「是否显示」——visible=true 启用图标，false 隐藏图标；
+     * 设置页开关的语义是「隐藏桌面图标」，故调用处传 !isChecked。
+     */
+    private void applyLauncherIcon(boolean visible) {
+        try {
+            android.content.ComponentName alias = new android.content.ComponentName(
+                    getPackageName(), getPackageName() + ".LauncherAlias");
+            getPackageManager().setComponentEnabledSetting(alias,
+                    visible
+                            ? android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                            : android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP);
+            android.widget.Toast.makeText(this,
+                    visible ? "桌面图标已显示" : "桌面图标已隐藏（LSPosed 中仍可打开设置）",
+                    android.widget.Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            android.widget.Toast.makeText(this, "图标切换失败: " + t.getMessage(),
+                    android.widget.Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override
@@ -181,10 +209,28 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
             public void run() {
                 SharedPreferences sp = mService.getRemotePreferences(Prefs.GROUP);
                 for (Map.Entry<String, Switch> e : switches.entrySet()) {
-                    e.getValue().setChecked(sp.getBoolean(e.getKey(), true));
+                    if (Prefs.KEY_HIDE_ICON.equals(e.getKey())) {
+                        // 开关语义=「隐藏图标」：图标显示(TRUE)时开关应 OFF
+                        e.getValue().setChecked(!isLauncherIconEnabled());
+                    } else {
+                        e.getValue().setChecked(sp.getBoolean(e.getKey(), true));
+                    }
                 }
             }
         });
+    }
+
+    /** 桌面图标 alias 当前是否启用 */
+    private boolean isLauncherIconEnabled() {
+        try {
+            android.content.ComponentName alias = new android.content.ComponentName(
+                    getPackageName(), getPackageName() + ".LauncherAlias");
+            int state = getPackageManager().getComponentEnabledSetting(alias);
+            return state != android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    && state != android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER;
+        } catch (Throwable t) {
+            return true;
+        }
     }
 
     @Override

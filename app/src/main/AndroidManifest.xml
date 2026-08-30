@@ -14,15 +14,32 @@
             android:name="xposeddescription"
             android:value="移除小米运动健康广告：开屏 / 首页 / 设备 / 运动 / 我的 页面推广卡片，内置开关设置" />
 
+        <!--
+          设置页（真实 Activity）：带 LSPosed 模块设置 category，
+          LSPosed 管理器长按"模块设置"通过它显式打开（不依赖 launcher/alias）。
+          桌面图标由 LauncherAlias 承载，隐藏图标（禁用 alias）不影响本入口。
+        -->
         <activity
             android:name=".SettingsActivity"
             android:exported="true"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
             </intent-filter>
         </activity>
+
+        <!-- 桌面图标 alias：隐藏图标 = 禁用此 alias（PackageManager.setComponentEnabledSetting） -->
+        <activity-alias
+            android:name=".LauncherAlias"
+            android:exported="true"
+            android:targetActivity=".SettingsActivity"
+            android:label="MiFitnessAdAway">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
     </application>
 
 </manifest>

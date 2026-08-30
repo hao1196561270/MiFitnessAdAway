@@ -434,7 +434,7 @@ public class AdAwayModule extends XposedModule {
     private final java.util.Set<String> handledCards = new java.util.HashSet<>();
 
     private void scanAndHide(android.view.View v) {
-        scanAndHideInternal(v, false);
+        scanAndHideInternal(v);
     }
 
     private void scanAndHideSport(android.view.View v) {
@@ -560,24 +560,21 @@ public class AdAwayModule extends XposedModule {
         }
     }
 
-    private void scanAndHideInternal(android.view.View v, boolean sportMode) {
+    private void scanAndHideInternal(android.view.View v) {
         if (v == null) {
             return;
         }
         if (v instanceof android.widget.TextView) {
             String text = ((android.widget.TextView) v).getText().toString();
-            if (text != null && text.length() > 0) {
-                // 运动模式已由 scanAndHideSport 锚点策略处理，此处不再按关键词隐藏
-                if (!sportMode && isAdText(text)) {
-                    hideCardContaining(v, text);
-                }
+            if (text != null && text.length() > 0 && isAdText(text)) {
+                hideCardContaining(v, text);
             }
             return; // TextView 无子视图
         }
         if (v instanceof android.view.ViewGroup) {
             android.view.ViewGroup vg = (android.view.ViewGroup) v;
             for (int i = 0; i < vg.getChildCount(); i++) {
-                scanAndHideInternal(vg.getChildAt(i), sportMode);
+                scanAndHideInternal(vg.getChildAt(i));
             }
         }
     }
@@ -591,14 +588,6 @@ public class AdAwayModule extends XposedModule {
      * 同一层用 identityHashCode 去重。
      */
     private void hideCardContaining(android.view.View textView, String text) {
-        hideCardContainingInternal(textView, text, false);
-    }
-
-    private void hideCardContainingSport(android.view.View textView, String text) {
-        hideCardContainingInternal(textView, text, true);
-    }
-
-    private void hideCardContainingInternal(android.view.View textView, String text, boolean sportMode) {
         try {
             // 起始节点：文案所属行容器（高度 ≤ 220 的最近父）
             android.view.View row = textView;
@@ -609,14 +598,14 @@ public class AdAwayModule extends XposedModule {
                     row = pvg;
                 }
             }
-            collapseUp(row, text, sportMode);
+            collapseUp(row, text);
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "hideCardContaining error", t);
         }
     }
 
     /** 逐层上卷：GONE 当前节点 → 上移兄弟 → 若父容器无正常文案则继续上卷 */
-    private void collapseUp(android.view.View node, String text, boolean sportMode) {
+    private void collapseUp(android.view.View node, String text) {
         String key = Integer.toHexString(System.identityHashCode(node));
         if (handledCards.contains(key)) {
             return;
@@ -635,25 +624,14 @@ public class AdAwayModule extends XposedModule {
         if (p instanceof android.view.ViewGroup) {
             android.view.ViewGroup parent = (android.view.ViewGroup) p;
             // 父容器已无正常文案 → 继续上卷（整卡移除）
-            boolean hasNormal = sportMode
-                    ? containsNormalTextSport(parent)
-                    : containsNormalText(parent);
-            if (!hasNormal) {
-                collapseUp(parent, text, sportMode);
+            if (!containsNormalText(parent)) {
+                collapseUp(parent, text);
             }
         }
     }
 
     /** 该视图（含后代）是否包含「正常文案」（非广告的文本） */
     private boolean containsNormalText(android.view.View v) {
-        return containsNormalTextInternal(v, false);
-    }
-
-    private boolean containsNormalTextSport(android.view.View v) {
-        return containsNormalTextInternal(v, true);
-    }
-
-    private boolean containsNormalTextInternal(android.view.View v, boolean sportMode) {
         if (v.getVisibility() == android.view.View.GONE) {
             return false; // 已隐藏的不算
         }
@@ -662,12 +640,12 @@ public class AdAwayModule extends XposedModule {
             if (t == null || t.length() == 0) {
                 return false;
             }
-            return sportMode ? !isSportAdText(t) : !isAdText(t);
+            return !isAdText(t);
         }
         if (v instanceof android.view.ViewGroup) {
             android.view.ViewGroup vg = (android.view.ViewGroup) v;
             for (int i = 0; i < vg.getChildCount(); i++) {
-                if (containsNormalTextInternal(vg.getChildAt(i), sportMode)) {
+                if (containsNormalText(vg.getChildAt(i))) {
                     return true;
                 }
             }
@@ -719,17 +697,6 @@ public class AdAwayModule extends XposedModule {
             }
         }
         return false;
-    }
-
-    /** 运动页运营卡片关键词（训练指标以下：运动团 + 活动推荐） */
-    private boolean isSportAdText(String text) {
-        if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_SPORT_CARDS)) {
-            return false;
-        }
-        return text.contains("运动团") || text.contains("活动推荐")
-                || text.contains("人已参加") || text.contains("人已加入")
-                || text.contains("线上赛") || text.contains("奖牌赛")
-                || text.contains("跑量活动") || text.contains("已参加");
     }
 
     /**
