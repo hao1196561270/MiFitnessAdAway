@@ -1,4 +1,4 @@
-package com.mifitness.adaway;
+package io.github.hao1196561270.mifitnessadaway;
 
 import android.content.SharedPreferences;
 import android.util.Log;

@@ -14,11 +14,11 @@ if (hasSigning) {
 }
 
 android {
-    namespace 'com.mifitness.adaway'
+    namespace 'io.github.hao1196561270.mifitnessadaway'
     compileSdk 37
 
     defaultConfig {
-        applicationId "com.mifitness.adaway"
+        applicationId "io.github.hao1196561270.mifitnessadaway"
         minSdk 26
         targetSdk 35
         versionCode 17

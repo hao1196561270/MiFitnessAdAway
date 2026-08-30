@@ -6,12 +6,12 @@
 
 访问 https://github.com/Xposed-Modules-Repo/submission/issues/new
 
-标题：`[submission] com.mifitness.adaway`
+标题：`[submission] io.github.hao1196561270.mifitnessadaway`
 
 正文（可直接复制）：
 
 ```
-Package name: com.mifitness.adaway
+Package name: io.github.hao1196561270.mifitnessadaway
 Module name: MiFitnessAdAway
 Source repository: https://github.com/hao1196561270/MiFitnessAdAway
 
@@ -19,11 +19,11 @@ Source repository: https://github.com/hao1196561270/MiFitnessAdAway
 Remove ads from Xiaomi Mi Fitness (com.mi.health 3.58.0), modern libxposed API 102 module.
 ```
 
-bot 会自动创建 `Xposed-Modules-Repo/com.mifitness.adaway` 仓库并邀请你为 admin（接受邀请后进入第 2 步）。
+bot 会自动创建 `Xposed-Modules-Repo/io.github.hao1196561270.mifitnessadaway` 仓库并邀请你为 admin（接受邀请后进入第 2 步）。
 
 ## 第 2 步：填充仓库内容
 
-在新仓库（`Xposed-Modules-Repo/com.mifitness.adaway`）根目录添加：
+在新仓库（`Xposed-Modules-Repo/io.github.hao1196561270.mifitnessadaway`）根目录添加：
 
 | 文件 | 说明 | 内容来源 |
 |---|---|---|
@@ -40,7 +40,7 @@ bot 会自动创建 `Xposed-Modules-Repo/com.mifitness.adaway` 仓库并邀请�
 
 ## 第 3 步：发布 Release（必须带 APK）
 
-在 `Xposed-Modules-Repo/com.mifitness.adaway` 的 Releases 页新建：
+在 `Xposed-Modules-Repo/io.github.hao1196561270.mifitnessadaway` 的 Releases 页新建：
 
 ```
 Tag:     1.0-1.0        ← 格式必须是 [versionCode]-[versionName]

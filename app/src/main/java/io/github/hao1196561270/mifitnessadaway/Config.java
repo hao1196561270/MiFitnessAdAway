@@ -1,4 +1,4 @@
-package com.mifitness.adaway;
+package io.github.hao1196561270.mifitnessadaway;
 
 /**
  * 模块配置默认值（Q16：9 项开关，默认全开 = 去广告生效）。

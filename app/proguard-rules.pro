@@ -16,5 +16,5 @@
 -keep class io.github.libxposed.api.** { *; }
 
 # ---- 模块自身（manifest 引用类由 AGP 自动 keep，这里兜底）----
--keep class com.mifitness.adaway.MiFitnessApp { *; }
--keep class com.mifitness.adaway.SettingsActivity { *; }
+-keep class io.github.hao1196561270.mifitnessadaway.MiFitnessApp { *; }
+-keep class io.github.hao1196561270.mifitnessadaway.SettingsActivity { *; }

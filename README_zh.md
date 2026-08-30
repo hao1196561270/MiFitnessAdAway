@@ -57,7 +57,7 @@ gradle assembleRelease   # 产物 app/build/outputs/apk/release/app-release.apk
 ## 仓库结构
 
 ```
-app/src/main/java/com/mifitness/adaway/
+app/src/main/java/io/github/hao1196561270/mifitnessadaway/
 ├── AdAwayModule.java    # libxposed 入口（全部 hook）
 ├── SettingsActivity.java # 设置界面（深浅色自适应）
 ├── MiFitnessApp.java    # XposedService 桥接（RemotePreferences）

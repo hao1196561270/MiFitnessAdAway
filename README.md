@@ -57,7 +57,7 @@ Target app must be **com.mi.health 3.58.0** (hook points may differ on other ver
 ## Repository layout
 
 ```
-app/src/main/java/com/mifitness/adaway/
+app/src/main/java/io/github/hao1196561270/mifitnessadaway/
 ├── AdAwayModule.java    # libxposed entry (all hooks)
 ├── SettingsActivity.java # settings UI (dark/light adaptive)
 ├── MiFitnessApp.java    # XposedService bridge (RemotePreferences)
