@@ -46,10 +46,10 @@ bot 会自动创建 `Xposed-Modules-Repo/io.github.hao1196561270.mifitnessadaway
 Tag:     1.0-1.0        ← 格式必须是 [versionCode]-[versionName]
 Title:   v1.0
 Content: changelog（如"首个正式版 / Initial release"）
-Attach:  MiFitnessAdAway-v1.0.apk（正式签名版）
+Attach:  MiFitnessAdAway-v1.0.1.apk（正式签名版）
 ```
 
-APK 文件：`E:\Harness\MiFitnessAdAway\MiFitnessAdAway-v1.0.apk`（正式签名，已上传到你的 GitHub Release）。
+APK 文件：`E:\Harness\MiFitnessAdAway\MiFitnessAdAway-v1.0.1.apk`（正式签名，已上传到你的 GitHub Release）。
 
 ## 生效时间
 
