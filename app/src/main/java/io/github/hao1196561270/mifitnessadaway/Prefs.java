@@ -17,6 +17,9 @@ public final class Prefs {
     public static final String KEY_ENABLE_MINE_DOCTOR = "enable_mine_doctor";
     public static final String KEY_ENABLE_SPORT_BANNER = "enable_sport_banner";
     public static final String KEY_ENABLE_SPORT_CARDS = "enable_sport_cards";
+    public static final String KEY_ENABLE_HEALTH_CONSULT = "enable_health_consult";
+    public static final String KEY_ENABLE_SLEEP_CARDS = "enable_sleep_cards";
+    public static final String KEY_ENABLE_DEVICE_RED_DOT = "enable_device_red_dot";
     public static final String KEY_ENABLE_SPLASH = "enable_splash";
     public static final String KEY_ENABLE_ANNOUNCE = "enable_announce";
     public static final String KEY_ENABLE_ANTI_DETECT = "enable_anti_detect";

@@ -84,6 +84,20 @@ public class AdAwayModule extends XposedModule {
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_SPORT_CARDS)) {
             hookSportTabViewScan(cl);
         }
+        // 健康页问诊卡片（睡眠/心率/血氧三页）：数据层 = PingAnHealth bindOneBanner/bindTwoBanners
+        if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_HEALTH_CONSULT)) {
+            hookPingAnConsult(cl);
+            // 睡/心率页顶部「蚂蚁阿福 AI 解读」卡无数据接口，视图层隐藏（Q6-B）
+            hookAqViewHide(cl);
+        }
+        // 睡眠页底部研究/改善运营卡（Q1-A 开关，Q2-A 视图层精准法）
+        if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_SLEEP_CARDS)) {
+            hookSleepCards(cl);
+        }
+        // 设备页红点：主页「系统设置」入口 + 底部导航「设备」tab 红点（伪装忽略电池优化方案）
+        if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_DEVICE_RED_DOT)) {
+            hookDeviceRedDots(cl);
+        }
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ANTI_DETECT)) {
             hookSensorHelper(cl);
         }
@@ -168,6 +182,11 @@ public class AdAwayModule extends XposedModule {
         hookAidongVipEntrance(cl);
         hookMineVipGone(cl);
     }
+
+    /**
+     * 「我的」页支付宝碰一碰会员广告卡（已还原，不再 hook）：
+     * 该卡由 RN 渲染，Java 侧 hook 无法根治，且此前的处理引入了布局问题。
+     */
 
     /**
      * 「我的」tab VIP 会员卡（RN 渲染）的源头开关。
@@ -272,6 +291,11 @@ public class AdAwayModule extends XposedModule {
         }
     }
 
+    /**
+     * UI 兜底：MineVipView.onAttachedToWindow 后 GONE。
+     * （还原为原始单保险；此前尝试构造器 GONE + setVip* 拦截等多重防线，
+     *  因 RN 渲染链路在 Java 侧不可根治且引入了布局问题，已全部移除。）
+     */
     private void hookMineVipGone(ClassLoader cl) throws Throwable {
         try {
             Class<?> clazz = Class.forName("com.xiaomi.fitness.mine.vip.MineVipView", true, cl);
@@ -432,6 +456,9 @@ public class AdAwayModule extends XposedModule {
 
     /** 已处理的卡片容器（identityHashCode 去重，防止重复上移） */
     private final java.util.Set<String> handledCards = new java.util.HashSet<>();
+
+    /** aqContainer 资源 id（首次扫描时按包名解析，避免异常） */
+    private int mAqContainerResId;
 
     private void scanAndHide(android.view.View v) {
         scanAndHideInternal(v);
@@ -759,6 +786,321 @@ public class AdAwayModule extends XposedModule {
             log(Log.INFO, TAG, "hooked: BannerImpl.getBannerListAsyncV2");
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "hook failed: BannerImpl.getBannerListAsyncV2", t);
+        }
+    }
+
+    // ===================== 健康页问诊卡片（Q6-B / Q7-A） =====================
+
+    /**
+     * 数据层：让 PingAnHealthExtKt.bindOneBanner / bindTwoBanners 直接返回（不渲染卡片）。
+     * 目标 app 对海外/Play 渠道用户本来就不显示这张卡（isPlayChannel 分支 gone），
+     * 此处模拟该官方逻辑：hook 返回 null 即跳过原方法 → 卡片不上屏、不占位。
+     * 睡眠（dept 7）、心率（dept 0）、血氧（dept 3）均经 bindOneBanner$default → bindOneBanner。
+     */
+    private void hookPingAnConsult(ClassLoader cl) throws Throwable {
+        String clsName = "com.xiaomi.fitness.util.PingAnHealthExtKt";
+        try {
+            Class<?> clazz = Class.forName(clsName, true, cl);
+            Class<?> cardView = Class.forName("com.xiaomi.fitness.view.HealthBannerCardSetView", true, cl);
+            for (String name : new String[]{"bindOneBanner", "bindTwoBanners"}) {
+                try {
+                    Method m = clazz.getDeclaredMethod(name, cardView, int.class, String.class);
+                    m.setAccessible(true);
+                    hook(m).intercept(chain -> {
+                        if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ALL)
+                                || !Prefs.isEnabled(mPrefs, Prefs.KEY_ENABLE_HEALTH_CONSULT)) {
+                            return chain.proceed();
+                        }
+                        if (debugLog()) {
+                            log(Log.INFO, TAG, "consult card blocked: PingAnHealthExtKt." + name);
+                        }
+                        return null; // 跳过原方法 → 卡片不渲染
+                    });
+                    log(Log.INFO, TAG, "hooked: PingAnHealthExtKt." + name);
+                } catch (Throwable t) {
+                    log(Log.ERROR, TAG, "hook failed: PingAnHealthExtKt." + name, t);
+                }
+            }
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "hook failed: " + clsName, t);
+        }
+    }
+
+    /**
+     * 视图层（兜底）：睡眠/心率页顶部「蚂蚁阿福 AI 解读」卡（AqView，血氧页无此卡）。
+     * AqView 无独立数据接口（内部 queryLastChat 拉聊天数据），Q6-B 决定整卡隐藏：
+     * - attach 时同步扫描（视图已存在但尚未 measure/draw → 第一帧即不可见，零闪现）；
+     * - 保留 800ms 轮询兜底（防异步重建/后续 visible）。
+     */
+    private void hookAqViewHide(ClassLoader cl) throws Throwable {
+        String[] hosts = new String[]{
+                "com.xiaomi.fitness.health.sleep.ui.SleepDayItemFragment",
+                "com.xiaomi.fitness.health.hrm.HrmDayItemFragment"};
+        android.view.View[] roots = new android.view.View[hosts.length];
+        for (int i = 0; i < hosts.length; i++) {
+            final int idx = i;
+            try {
+                Class<?> clazz = Class.forName(hosts[i], true, cl);
+                Method m = clazz.getDeclaredMethod("onViewCreated", android.view.View.class, android.os.Bundle.class);
+                m.setAccessible(true);
+                hook(m).intercept(chain -> {
+                    Object result = chain.proceed();
+                    android.view.View root = (android.view.View) chain.getArg(0);
+                    if (root != null) {
+                        roots[idx] = root;
+                        // 首帧前隐藏：attach 回调发生在 measure/layout/draw 之前
+                        root.addOnAttachStateChangeListener(new android.view.View.OnAttachStateChangeListener() {
+                            @Override
+                            public void onViewAttachedToWindow(android.view.View v) {
+                                try {
+                                    hideAqCard(v);
+                                    // 睡眠页底部研究/改善卡一并首帧隐藏
+                                    hideSleepCards(v);
+                                } catch (Throwable t) {
+                                    log(Log.ERROR, TAG, "AqView attach-hide error", t);
+                                }
+                            }
+
+                            @Override
+                            public void onViewDetachedFromWindow(android.view.View v) {
+                            }
+                        });
+                        // 异步兜底
+                        scheduleAqScan(roots[idx], 0);
+                    }
+                    return result;
+                });
+                log(Log.INFO, TAG, "hooked: " + hosts[i] + ".onViewCreated (AqView hide)");
+            } catch (Throwable t) {
+                log(Log.ERROR, TAG, "hook failed: " + hosts[i] + ".onViewCreated", t);
+            }
+        }
+    }
+
+    private void scheduleAqScan(final android.view.View root, final int round) {
+        if (round > 8) {
+            return;
+        }
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    hideAqCard(root);
+                    scheduleAqScan(root, round + 1);
+                } catch (Throwable t) {
+                    log(Log.ERROR, TAG, "AqView scan error", t);
+                }
+            }
+        }, 800);
+    }
+
+    /** 遍历视图树，找 aqContainer（蚂蚁阿福 AI 解读卡容器）并 GONE。
+     * 注意：睡眠/心率页的 aqContainer 位于 LinearLayout 中，GONE 后父容器自动重排，
+     * 不能再调 shiftSiblingsAfter（会造成双重上移、内容顶进上方评分卡区域）。 */
+    private void hideAqCard(android.view.View v) {
+        if (v == null) {
+            return;
+        }
+        if (v.getResources() != null && mAqContainerResId == 0) {
+            mAqContainerResId = v.getResources().getIdentifier("aqContainer", "id", "com.mi.health");
+        }
+        if (mAqContainerResId != 0 && v.getId() == mAqContainerResId) {
+            if (v.getVisibility() != android.view.View.GONE) {
+                String key = Integer.toHexString(System.identityHashCode(v));
+                if (!handledCards.contains(key)) {
+                    handledCards.add(key);
+                    v.setVisibility(android.view.View.GONE);
+                    log(Log.INFO, TAG, "AqView card hidden: aqContainer");
+                }
+            }
+            return; // 容器内无需继续扫描
+        }
+        if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup vg = (android.view.ViewGroup) v;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                hideAqCard(vg.getChildAt(i));
+            }
+        }
+    }
+
+    // ===================== 睡眠页研究/改善运营卡（Q1-A / Q2-A） =====================
+
+    /** healthSleepResearchLayoutSet / sleepInterfereLayout 资源 id（延时解析） */
+    private int mSleepResearchResId;
+    private int mSleepInterfereResId;
+
+    /**
+     * 睡眠页底部三张运营卡（睡眠呼吸暂停研究 / 睡眠健康研究 → healthSleepResearchLayoutSet，
+     * 睡眠改善计划 → sleepInterfereLayout）均位于 LinearLayout 内，GONE 后父容器自动重排。
+     * 1) hook setSleepHealthBanner：集合初始化后延时扫描隐藏两个容器；
+     * 2) hook updateSleepInterfereVisibility：阻止改善计划卡被重新显示。
+     */
+    private void hookSleepCards(ClassLoader cl) throws Throwable {
+        String clsName = "com.xiaomi.fitness.health.sleep.ui.SleepHealthBannerCardSetLayout";
+        try {
+            Class<?> clazz = Class.forName(clsName, true, cl);
+
+            // setSleepHealthBanner(Integer) —— 集合数据绑定/显隐入口
+            try {
+                Method m = clazz.getDeclaredMethod("setSleepHealthBanner", Integer.class);
+                m.setAccessible(true);
+                hook(m).intercept(chain -> {
+                    Object result = chain.proceed();
+                    Object self = chain.getThisObject();
+                    if (self instanceof android.view.View) {
+                        // 原方法内 visible(D)/(J) 已执行；同步 GONE（draw 在下一帧 → 首帧不可见）
+                        hideSleepCards((android.view.View) self);
+                        scheduleSleepCardScan((android.view.View) self, 0);
+                    }
+                    return result;
+                });
+                log(Log.INFO, TAG, "hooked: SleepHealthBannerCardSetLayout.setSleepHealthBanner");
+            } catch (Throwable t) {
+                log(Log.ERROR, TAG, "hook failed: setSleepHealthBanner", t);
+            }
+
+            // updateSleepInterfereVisibility(boolean, Function0) —— 改善计划卡显隐
+            try {
+                Class<?> fn = Class.forName("kotlin.jvm.functions.Function0", true, cl);
+                Method m = clazz.getDeclaredMethod("updateSleepInterfereVisibility", boolean.class, fn);
+                m.setAccessible(true);
+                hook(m).intercept(chain -> {
+                    if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_SLEEP_CARDS)) {
+                        return chain.proceed();
+                    }
+                    // 不执行原逻辑：改善计划卡保持/转为隐藏
+                    if (debugLog()) {
+                        log(Log.INFO, TAG, "sleepInterfere blocked (updateSleepInterfereVisibility)");
+                    }
+                    return null;
+                });
+                log(Log.INFO, TAG, "hooked: SleepHealthBannerCardSetLayout.updateSleepInterfereVisibility");
+            } catch (Throwable t) {
+                log(Log.ERROR, TAG, "hook failed: updateSleepInterfereVisibility", t);
+            }
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "hook failed: " + clsName, t);
+        }
+    }
+
+    private void scheduleSleepCardScan(final android.view.View root, final int round) {
+        if (round > 8) {
+            return;
+        }
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    hideSleepCards(root);
+                    scheduleSleepCardScan(root, round + 1);
+                } catch (Throwable t) {
+                    log(Log.ERROR, TAG, "sleep card scan error", t);
+                }
+            }
+        }, 800);
+    }
+
+    /** 扫描集合子树，GONE 研究卡容器与改善计划卡（LinearLayout 自动重排，不做手动 shift） */
+    private void hideSleepCards(android.view.View v) {
+        if (v == null) {
+            return;
+        }
+        if (v.getResources() != null) {
+            if (mSleepResearchResId == 0) {
+                mSleepResearchResId = v.getResources().getIdentifier("healthSleepResearchLayoutSet", "id", "com.mi.health");
+            }
+            if (mSleepInterfereResId == 0) {
+                mSleepInterfereResId = v.getResources().getIdentifier("sleepInterfereLayout", "id", "com.mi.health");
+            }
+        }
+        if (mSleepResearchResId != 0 && v.getId() == mSleepResearchResId) {
+            goneOnce(v, "sleep research card");
+            return;
+        }
+        if (mSleepInterfereResId != 0 && v.getId() == mSleepInterfereResId) {
+            goneOnce(v, "sleep interfere card");
+            return;
+        }
+        if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup vg = (android.view.ViewGroup) v;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                hideSleepCards(vg.getChildAt(i));
+            }
+        }
+    }
+
+    /** GONE 一次并按 identityHashCode 去重（不 shift，LinearLayout 自动重排） */
+    private void goneOnce(android.view.View v, String what) {
+        if (v.getVisibility() == android.view.View.GONE) {
+            return;
+        }
+        String key = Integer.toHexString(System.identityHashCode(v));
+        if (handledCards.contains(key)) {
+            return;
+        }
+        handledCards.add(key);
+        v.setVisibility(android.view.View.GONE);
+        log(Log.INFO, TAG, "hidden: " + what + " (" + v.getClass().getSimpleName() + ")");
+    }
+
+    // ===================== 设备页红点（底部tab + 主页系统设置入口） =====================
+
+    /**
+     * 清除设备页红点（沿用已验证有效的"返回后清数据"方案）：
+     * 1) DeviceTabModel.getDeviceNormalTabList(model, type) —— 穿戴设备主页「系统设置」(type=9)
+     *    入口红点（rightTextWithDot=" "）；
+     * 2) DeviceTabModel.getDeviceFeatureList(model, type) —— 系统设置页列表条目
+     *    （「手环防断连保护」条目的 rightTextWithDot/remind 红点）。
+     * 两种条目都是 TabContentItem，返回后清空 rightTextWithDot/remindText/remind 即可。
+     */
+    /**
+     * 设备页红点消除（伪装方案，已验证有效）：
+     * 1) PowerManager.isIgnoringBatteryOptimizations → true：伪装「已忽略电池优化」，
+     *    同时消除底部导航「设备」tab 红点（!isIgnoringBatteryOptimizations 条件）与
+     *    主页「系统设置」入口红点（rightTextWithDot 由同一判断控制）。
+     * 2) FaceHelperImpl.getFaceEntranceRedPoint/getFaceEntranceOperationRedPoint → false：
+     *    消除表盘红点/表盘运营红点（设备tab红点的独立 OR 条件）。
+     * 开关：KEY_ENABLE_DEVICE_RED_DOT（默认开）。
+     */
+    private void hookDeviceRedDots(ClassLoader cl) throws Throwable {
+        // 表盘红点/运营红点 → false
+        try {
+            Class<?> face = Class.forName("com.xiaomi.fitness.watch.face.export.FaceHelperImpl", true, cl);
+            for (String name : new String[]{"getFaceEntranceRedPoint", "getFaceEntranceOperationRedPoint"}) {
+                try {
+                    Method m = face.getDeclaredMethod(name, String.class);
+                    m.setAccessible(true);
+                    hook(m).intercept(chain -> {
+                        if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ALL)
+                                || !Prefs.isEnabled(mPrefs, Prefs.KEY_ENABLE_DEVICE_RED_DOT)) {
+                            return chain.proceed();
+                        }
+                        return false;
+                    });
+                    log(Log.INFO, TAG, "hooked: FaceHelperImpl." + name + " (device red dot)");
+                } catch (Throwable t) {
+                    log(Log.ERROR, TAG, "hook failed: FaceHelperImpl." + name, t);
+                }
+            }
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "hook failed: FaceHelperImpl", t);
+        }
+
+        // 伪装已忽略电池优化 → 设备tab红点 + 主页系统设置入口红点消失
+        try {
+            Class<?> pmCls = Class.forName("android.os.PowerManager", true, cl);
+            Method m = pmCls.getMethod("isIgnoringBatteryOptimizations", String.class);
+            m.setAccessible(true);
+            hook(m).intercept(chain -> {
+                if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ALL)
+                        || !Prefs.isEnabled(mPrefs, Prefs.KEY_ENABLE_DEVICE_RED_DOT)) {
+                    return chain.proceed();
+                }
+                return true;
+            });
+            log(Log.INFO, TAG, "hooked: PowerManager.isIgnoringBatteryOptimizations (device red dot)");
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "hook failed: PowerManager.isIgnoringBatteryOptimizations", t);
         }
     }
 

@@ -101,10 +101,13 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
         addSwitch(root, "总开关（启用去广告）", Prefs.KEY_ENABLE_ALL);
         addSwitch(root, "首页健康界面推广卡片", Prefs.KEY_ENABLE_HEALTH_BANNER);
         addSwitch(root, "设备界面推广卡片", Prefs.KEY_ENABLE_DEVICE_BANNER);
+        addSwitch(root, "设备红点（底部tab/系统设置入口）", Prefs.KEY_ENABLE_DEVICE_RED_DOT);
         addSwitch(root, "我的界面 VIP 会员卡", Prefs.KEY_ENABLE_MINE_VIP);
         addSwitch(root, "我的界面健康问诊卡", Prefs.KEY_ENABLE_MINE_DOCTOR);
         addSwitch(root, "运动界面轮播卡片", Prefs.KEY_ENABLE_SPORT_BANNER);
         addSwitch(root, "运动界面运营卡片（训练指标以下）", Prefs.KEY_ENABLE_SPORT_CARDS);
+        addSwitch(root, "健康问诊卡片（睡眠/心率/血氧）", Prefs.KEY_ENABLE_HEALTH_CONSULT);
+        addSwitch(root, "睡眠界面研究/改善卡片", Prefs.KEY_ENABLE_SLEEP_CARDS);
         addSwitch(root, "开屏广告", Prefs.KEY_ENABLE_SPLASH);
         addSwitch(root, "公告 banner", Prefs.KEY_ENABLE_ANNOUNCE);
         addSwitch(root, "反 hook 检测", Prefs.KEY_ENABLE_ANTI_DETECT);

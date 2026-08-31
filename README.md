@@ -4,7 +4,7 @@ English | [中文](README_zh.md)
 
 Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.58.0), built as a modern **libxposed API 102** LSPosed module (requires LSPosed ≥ v2.1.1 / KernelSU).
 
-> **v1.0.1 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine tabs cleaned, all normal features intact.
+> **v1.0.2 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact.
 
 ## Features
 
@@ -13,15 +13,23 @@ Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.58.
 | Splash ads (image/video) | ✅ |
 | Home health tab promotion cards | ✅ |
 | Device tab promotion cards | ✅ |
+| Device red dots (bottom nav "Device" tab + home "System settings" entry) | ✅ |
 | Sport tab carousel cards | ✅ |
 | Sport tab operation cards (below "training index") | ✅ + scroll disabled |
 | Mine tab VIP membership card | ✅ |
 | Mine tab doctor consultation card | ✅ |
+| Health detail pages consultation cards (Sleep / Heart rate / SpO₂) | ✅ |
+| "PingAn Health" consultation cards (data-layer: bindOneBanner/bindTwoBanners) | ✅ |
+| "AntBoy AI" interpretation card (top of Sleep / Heart rate pages) | ✅ |
+| Sleep page research / improvement cards (sleep-breathing-apnea research, sleep-health research, 21-day improvement plan) | ✅ |
 
-The module app ships with a **settings UI** with 12 toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
+The module app ships with a **settings UI** with 15 toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
 
 - Master (enable ad-removal)
 - Home / device / mine VIP / mine doctor / sport carousel / sport operation / splash / announcement toggles
+- Health consultation card (Sleep / Heart rate / SpO₂ pages)
+- Sleep research / improvement cards
+- Device red dots (bottom nav + system settings entry)
 - Anti-hook detection (`SensorHelper.A()/D()` → 0)
 - **Hide launcher icon** (applies instantly, no restart needed; the settings page stays reachable from LSPosed)
 - Debug log
@@ -30,8 +38,10 @@ The settings UI follows the system dark/light theme.
 
 ## How it works
 
-- **Data-layer interception**: banner APIs, splash cache, membership data and doctor data return empty.
+- **Data-layer interception**: banner APIs, splash cache, membership data, doctor data and PingAn-Health banner binders return empty / are skipped.
 - **View-layer fallback**: the "Mine" tab is rendered by React Native (YRN) — ad cards are collapsed layer-by-layer via view-tree scan, and following content is shifted up to fill the gap.
+- **Health detail pages**: the "AntBoy AI" interpretation card (AqView) and sleep research/improvement cards are hidden via view-tree scan with resource-id targeting.
+- **Device red dots**: `PowerManager.isIgnoringBatteryOptimizations` is faked to true (equivalent to "battery optimization ignored") plus face-entrance red-dot getters return false, which removes the bottom-nav "Device" tab dot and the home "System settings" entry dot.
 - **Sport anchor strategy**: everything below the "training index" anchor is removed as a whole, and page scrolling is disabled.
 
 ## Requirements
