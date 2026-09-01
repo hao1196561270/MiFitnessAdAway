@@ -59,6 +59,10 @@ gradle assembleRelease   # 产物 app/build/outputs/apk/release/app-release.apk
 
 若本地存在 `keystore/mifitnessadaway.keystore` 与 `keystore/signing.properties`（均不入库），Release 使用正式签名；否则自动回退 debug 签名。
 
+### GitHub Actions 发布
+
+在 Actions 页面手动运行 **Build and publish release**。工作流会找到最新的 `v<主版本>.<次版本>.<补丁版本>` 标签，用十进制递增补丁号，构建 APK 并发布 GitHub Release，更新内容链接到触发本次构建的提交。运行前请在仓库 Secrets 中配置：`RELEASE_KEYSTORE_BASE64`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`。
+
 ## 安装
 
 1. 真机 root（KernelSU 或 Magisk）+ LSPosed v2.1.1+（Zygisk）

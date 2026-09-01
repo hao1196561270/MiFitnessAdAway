@@ -59,6 +59,10 @@ gradle assembleRelease   # output: app/build/outputs/apk/release/app-release.apk
 
 If `keystore/mifitnessadaway.keystore` and `keystore/signing.properties` exist locally (both git-ignored), the release is signed with the real key; otherwise it falls back to the debug key.
 
+### GitHub Actions release
+
+Run **Build and publish release** from the Actions tab. The workflow finds the latest `v<major>.<minor>.<patch>` tag, increments the patch number in decimal, builds the APK, and publishes a GitHub Release whose notes link to the triggering commit. Configure these repository secrets before running it: `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, and `RELEASE_KEY_PASSWORD`.
+
 ## Install
 
 1. Rooted device (KernelSU or Magisk) + LSPosed v2.1.1+ (Zygisk)

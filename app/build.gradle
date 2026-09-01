@@ -13,6 +13,8 @@ boolean hasSigning = keystoreFile.exists() && signingPropsFile.exists()
 if (hasSigning) {
     signingPropsFile.withInputStream { keystoreProps.load(it) }
 }
+def configuredVersionCode = project.findProperty('versionCode')
+def configuredVersionName = project.findProperty('versionName')
 
 android {
     namespace 'io.github.hao1196561270.mifitnessadaway'
@@ -22,8 +24,8 @@ android {
         applicationId "io.github.hao1196561270.mifitnessadaway"
         minSdk 26
         targetSdk 35
-        versionCode 22
-        versionName "1.0.2"
+        versionCode configuredVersionCode != null ? configuredVersionCode.toString().toInteger() : 22
+        versionName configuredVersionName != null ? configuredVersionName.toString() : "1.0.2"
     }
 
     signingConfigs {
