@@ -61,7 +61,7 @@ If `keystore/mifitnessadaway.keystore` and `keystore/signing.properties` exist l
 
 ### GitHub Actions release
 
-Run **Build and publish release** from the Actions tab. The workflow finds the latest `v<major>.<minor>.<patch>` tag, increments the patch number in decimal, builds the APK, and publishes a GitHub Release whose notes link to the triggering commit. Configure these repository secrets before running it: `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, and `RELEASE_KEY_PASSWORD`.
+Run **Build and publish release** from the Actions tab. The workflow finds the latest `v<major>.<minor>.<patch>` tag, increments the patch number in decimal, builds the APK, and publishes a GitHub Release whose notes list up to five commits since the previous release with links to each commit. Configure these repository secrets before running it: `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, and `RELEASE_KEY_PASSWORD`.
 
 ## Install
 

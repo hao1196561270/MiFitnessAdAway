@@ -82,6 +82,7 @@ jobs:
           next_patch=$((10#$latest_patch + 1))
           next_tag="v${latest_major}.${latest_minor}.${next_patch}"
           next_version_name="${latest_major}.${latest_minor}.${next_patch}"
+          asset_name="MiFitnessAdAway-${next_tag}.apk"
 
           # Keep versionCode decimal and monotonic for semantic-version releases.
           next_version_code=$((10#$latest_major * 10000 + 10#$latest_minor * 100 + 10#$next_patch))
@@ -94,9 +95,11 @@ jobs:
           commit_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${commit_sha}"
 
           {
+            echo "LATEST_TAG=$latest_tag"
             echo "RELEASE_TAG=$next_tag"
             echo "VERSION_NAME=$next_version_name"
             echo "VERSION_CODE=$next_version_code"
+            echo "ASSET_NAME=$asset_name"
             echo "COMMIT_SHA=$commit_sha"
             echo "COMMIT_URL=$commit_url"
           } >> "$GITHUB_ENV"
@@ -110,21 +113,46 @@ jobs:
           -PversionName="$VERSION_NAME"
           -PversionCode="$VERSION_CODE"
 
+      - name: Name release APK
+        run: cp "app/build/outputs/apk/release/app-release.apk" "$ASSET_NAME"
+
       - name: Write release notes
         shell: bash
         run: |
           cat > release-notes.md <<EOF
           ## 更新内容
 
-          [查看本次提交内容]($COMMIT_URL)
+          上个正式版（$LATEST_TAG）之后的提交：
           EOF
+
+          commits_written=0
+          while IFS=$'\t' read -r commit_sha commit_subject; do
+            printf -- '- [%s %s](%s/%s/commit/%s)\n' \
+              "${commit_sha:0:7}" \
+              "$commit_subject" \
+              "$GITHUB_SERVER_URL" \
+              "$GITHUB_REPOSITORY" \
+              "$commit_sha" >> release-notes.md
+            commits_written=$((commits_written + 1))
+          done < <(git log "$LATEST_TAG..HEAD" -5 --pretty=format:'%H%x09%s')
+
+          if [[ "$commits_written" -eq 0 ]]; then
+            echo '- 没有检测到新增提交。' >> release-notes.md
+          fi
+
+          printf '\n[下载 %s](%s/%s/releases/download/%s/%s)\n' \
+            "$ASSET_NAME" \
+            "$GITHUB_SERVER_URL" \
+            "$GITHUB_REPOSITORY" \
+            "$RELEASE_TAG" \
+            "$ASSET_NAME" >> release-notes.md
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh release create "$RELEASE_TAG"
-          "app/build/outputs/apk/release/app-release.apk"
+          "$ASSET_NAME"
           --target "$COMMIT_SHA"
           --title "$RELEASE_TAG"
           --notes-file release-notes.md

@@ -61,7 +61,7 @@ gradle assembleRelease   # 产物 app/build/outputs/apk/release/app-release.apk
 
 ### GitHub Actions 发布
 
-在 Actions 页面手动运行 **Build and publish release**。工作流会找到最新的 `v<主版本>.<次版本>.<补丁版本>` 标签，用十进制递增补丁号，构建 APK 并发布 GitHub Release，更新内容链接到触发本次构建的提交。运行前请在仓库 Secrets 中配置：`RELEASE_KEYSTORE_BASE64`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`。
+在 Actions 页面手动运行 **Build and publish release**。工作流会找到最新的 `v<主版本>.<次版本>.<补丁版本>` 标签，用十进制递增补丁号，构建 APK 并发布 GitHub Release，更新内容列出上个正式版之后的最多 5 个提交，并为每条提交附上 GitHub 链接。运行前请在仓库 Secrets 中配置：`RELEASE_KEYSTORE_BASE64`、`RELEASE_STORE_PASSWORD`、`RELEASE_KEY_ALIAS`、`RELEASE_KEY_PASSWORD`。
 
 ## 安装
 
