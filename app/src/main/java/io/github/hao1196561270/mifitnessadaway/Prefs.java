@@ -11,8 +11,6 @@ public final class Prefs {
     public static final String GROUP = "adaway_settings";
 
     public static final String KEY_ENABLE_ALL = "enable_all";
-    public static final String KEY_ENABLE_HEALTH_BANNER = "enable_health_banner";
-    public static final String KEY_ENABLE_DEVICE_BANNER = "enable_device_banner";
     public static final String KEY_ENABLE_MINE_VIP = "enable_mine_vip";
     public static final String KEY_ENABLE_MINE_DOCTOR = "enable_mine_doctor";
     public static final String KEY_ENABLE_SPORT_BANNER = "enable_sport_banner";
@@ -21,7 +19,6 @@ public final class Prefs {
     public static final String KEY_ENABLE_SLEEP_CARDS = "enable_sleep_cards";
     public static final String KEY_ENABLE_DEVICE_RED_DOT = "enable_device_red_dot";
     public static final String KEY_ENABLE_SPLASH = "enable_splash";
-    public static final String KEY_ENABLE_ANNOUNCE = "enable_announce";
     public static final String KEY_ENABLE_ANTI_DETECT = "enable_anti_detect";
     public static final String KEY_DEBUG_LOG = "debug_log";
     public static final String KEY_HIDE_ICON = "hide_icon";

@@ -23,10 +23,10 @@ Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.58.
 | "AntBoy AI" interpretation card (top of Sleep / Heart rate pages) | ✅ |
 | Sleep page research / improvement cards (sleep-breathing-apnea research, sleep-health research, 21-day improvement plan) | ✅ |
 
-The module app ships with a **settings UI** with 15 toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
+The module app ships with a **settings UI** with 12 effective toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
 
 - Master (enable ad-removal)
-- Home / device / mine VIP / mine doctor / sport carousel / sport operation / splash / announcement toggles
+- Mine VIP / mine doctor / sport carousel / sport operation / splash toggles
 - Health consultation card (Sleep / Heart rate / SpO₂ pages)
 - Sleep research / improvement cards
 - Device red dots (bottom nav + system settings entry)
@@ -71,7 +71,8 @@ If `keystore/mifitnessadaway.keystore` and `keystore/signing.properties` exist l
 ```
 app/src/main/java/io/github/hao1196561270/mifitnessadaway/
 ├── AdAwayModule.java     # libxposed entry (all hooks)
-├── SettingsActivity.java # settings UI (dark/light adaptive, hide-icon toggle)
+├── SettingsActivity.kt   # settings UI (dark/light adaptive, hide-icon toggle)
+├── SettingsItems.java    # settings item definitions and groups
 ├── MiFitnessApp.java     # XposedService bridge (RemotePreferences)
 └── Prefs.java            # preference keys
 app/src/main/resources/META-INF/xposed/  # module declarations (module.prop / java_init.list / scope.list)

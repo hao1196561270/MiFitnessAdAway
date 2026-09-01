@@ -23,10 +23,10 @@
 | 蚂蚁阿福 AI 解读卡（睡眠 / 心率页顶部） | ✅ |
 | 睡眠页研究 / 改善卡片（睡眠呼吸暂停研究、睡眠健康研究、21 天改善计划） | ✅ |
 
-模块自带**设置界面**，共 15 个开关（libxposed RemotePreferences，修改后重启应用生效）：
+模块自带**设置界面**，共 12 个开关（libxposed RemotePreferences，修改后重启应用生效）：
 
 - 总开关（启用去广告）
-- 首页 / 设备 / 我的VIP / 我的问诊 / 运动轮播 / 运动运营 / 开屏 / 公告 各页面开关
+- 我的VIP / 我的问诊 / 运动轮播 / 运动运营 / 开屏 各页面开关
 - 健康问诊卡片（睡眠 / 心率 / 血氧页面）
 - 睡眠研究 / 改善卡片
 - 设备红点（底部 tab + 系统设置入口）
@@ -71,7 +71,8 @@ gradle assembleRelease   # 产物 app/build/outputs/apk/release/app-release.apk
 ```
 app/src/main/java/io/github/hao1196561270/mifitnessadaway/
 ├── AdAwayModule.java     # libxposed 入口（全部 hook）
-├── SettingsActivity.java # 设置界面（深浅色自适应、隐藏图标开关）
+├── SettingsActivity.kt   # 设置界面（深浅色自适应、隐藏图标开关）
+├── SettingsItems.java    # 设置项定义和分组
 ├── MiFitnessApp.java     # XposedService 桥接（RemotePreferences）
 └── Prefs.java            # 设置键定义
 app/src/main/resources/META-INF/xposed/  # 模块声明（module.prop / java_init.list / scope.list）

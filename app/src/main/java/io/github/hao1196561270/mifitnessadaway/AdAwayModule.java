@@ -38,7 +38,9 @@ public class AdAwayModule extends XposedModule {
     @Override
     public void onPackageLoaded(PackageLoadedParam param) {
         if (!TARGET_PACKAGE.equals(param.getPackageName())) {
-            detach();
+            if (getApiVersion() >= 102) {
+                detach();
+            }
         }
     }
 

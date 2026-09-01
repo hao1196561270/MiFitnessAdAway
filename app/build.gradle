@@ -1,5 +1,6 @@
 plugins {
     id 'com.android.application'
+    id 'org.jetbrains.kotlin.plugin.compose'
 }
 
 // ---------- release 签名（正式）----------
@@ -64,4 +65,7 @@ dependencies {
     // AdAwayModule 的 LiveData getter hook 引用了 androidx.lifecycle.MutableLiveData：
     // 运行期由目标 App（com.mi.health 自带 lifecycle）提供，仅编译期需要 → compileOnly 不进包
     compileOnly 'androidx.lifecycle:lifecycle-livedata-core:2.8.7'
+    implementation 'androidx.activity:activity-compose:1.10.1'
+    implementation 'top.yukonga.miuix.kmp:miuix-ui-android:0.9.3'
+    implementation 'top.yukonga.miuix.kmp:miuix-preference-android:0.9.3'
 }
