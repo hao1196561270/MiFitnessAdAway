@@ -24,6 +24,9 @@ signing.properties
 # 旧版本 APK（release 由 GitHub Releases 承载）
 MiFitnessAdAway-v*.apk
 
+# 开发归档（原版 APK / jadx 反编译 / 工具链 / 截图等，不入库）
+dev-archive/
+
 # IDE
 .idea/
 *.iml
