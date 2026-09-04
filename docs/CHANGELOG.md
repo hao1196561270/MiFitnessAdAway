@@ -4,6 +4,8 @@
 
 ### English
 
+**Highly recommended for v1.0.3 users: v1.0.3 keeps every previously trialed face in cache, so stale downloads pile up and eat storage; v1.0.4 wipes them.**
+
 **Improved: Exported cache cleanup**
 Exported face cache is now removed whole-directory on the next scan after export (previously: only `resource.bin` older than 5 minutes), so only the just-downloaded face stays cached. Snapshot-based matching plus 60-second handoff and 15-minute push guards prevent deleting files mid-download or mid-transfer.
 
@@ -14,6 +16,8 @@ Removed unused parameter plumbing in the export chain and an unused import; no b
 All existing ad-removal and export features unchanged.
 
 ### 中文
+
+**强烈推荐 1.0.3 用户更新：1.0.3 会把之前试用过的表盘一直留在缓存里，越堆越多占空间；1.0.4 会把它们清掉。**
 
 **改进：已导出缓存清理**
 已导出表盘缓存改为导出后下次扫描即整目录删除（之前：仅删超 5 分钟的 `resource.bin`），缓存里只留本次下载的。快照匹配 + 60 秒交接保护 + 15 分钟推送保护，不误删正在下载/传输的文件。
@@ -29,6 +33,8 @@ All existing ad-removal and export features unchanged.
 ## v1.0.3 (versionCode 23)
 
 ### English
+
+**Update notice: this version keeps every previously trialed face in cache, which piles up over time — please upgrade to v1.0.4, which wipes them.**
 
 **New: Trial watchface auto-export**
 After a trial download finishes, the cached `resource.bin` is automatically re-ID'd (`12→19` prefix swap, same length) and written to `Download/` under its Chinese face name (e.g. `蜘蛛侠超感大眼_190917425583.bin`), ready for third-party import (verified with AstroBox on Xiaomi Smart Band 10 Pro). Every scan reports via Toast/notification; already-exported faces are never exported twice.
@@ -46,6 +52,8 @@ One new toggle in the settings UI, 15 → 16 (default off): "Watchface auto-expo
 All existing ad-removal features unchanged.
 
 ### 中文
+
+**更新提示：此版本会把之前试用过的表盘一直留在缓存里，越用堆得越多，请升级到 v1.0.4 清理。**
 
 **新增：试用表盘自动导出**
 试用下载完成后，缓存的 `resource.bin` 自动按"12→19"规则换新 ID（等长），以表盘中文名写入 `Download/`（如 `蜘蛛侠超感大眼_190917425583.bin`），供第三方软件导入（已在小米手环 10 Pro + AstroBox 真机验证）；每次扫描经 Toast/通知告知结果，已导出的不再重复导出。
