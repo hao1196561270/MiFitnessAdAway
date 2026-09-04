@@ -4,7 +4,7 @@ import android.content.SharedPreferences;
 
 /**
  * 设置键定义（libxposed RemotePreferences，框架自动同步到目标进程）。
- * 默认值均为 true = 开启去广告。
+ * 默认全开=true（去广告）；表盘自动导出是实验开关，默认关=false。
  */
 public final class Prefs {
 

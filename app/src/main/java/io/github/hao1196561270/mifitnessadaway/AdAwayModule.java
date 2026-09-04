@@ -1,11 +1,37 @@
 package io.github.hao1196561270.mifitnessadaway;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.ContentResolver;
+import android.content.ContentValues;
+import android.content.Context;
 import android.content.SharedPreferences;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewParent;
+import android.widget.TextView;
+import android.widget.Toast;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 import io.github.libxposed.api.XposedModule;
 
@@ -59,6 +85,71 @@ public class AdAwayModule extends XposedModule {
         return mPrefs != null && Prefs.isEnabled(mPrefs, Prefs.KEY_DEBUG_LOG);
     }
 
+    /** 安装期统一包装：单个 hook 失败只记日志，不连累其他 hook。 */
+    private interface HookInstall {
+        void install() throws Throwable;
+    }
+
+    private void tryHook(String what, HookInstall install) {
+        try {
+            install.install();
+            log(Log.INFO, TAG, "hooked: " + what);
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "hook failed: " + what, t);
+        }
+    }
+
+    /** 视图树轮询动作（配合 scheduleRepeat 使用）。 */
+    private interface ViewAction {
+        void run(View v);
+    }
+
+    /**
+     * 通用轮询：主线程每 800ms 执行一次 action，共 9 轮。
+     * 原 scheduleViewScan / scheduleSportViewScan / scheduleAqScan /
+     * scheduleSleepCardScan 四个同形方法合并于此，行为一致。
+     */
+    private void scheduleRepeat(final View root, final int round,
+                                final String errTag, final ViewAction action) {
+        if (round > 8) {
+            return;
+        }
+        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    action.run(root);
+                    scheduleRepeat(root, round + 1, errTag, action);
+                } catch (Throwable t) {
+                    log(Log.ERROR, TAG, errTag, t);
+                }
+            }
+        }, 800);
+    }
+
+    /** 目标进程 Context（ActivityThread 反射，三处共用）。 */
+    private Context targetContext() {
+        try {
+            Object app = Class.forName("android.app.ActivityThread")
+                    .getMethod("currentApplication").invoke(null);
+            return (Context) app;
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "target context failed", t);
+            return null;
+        }
+    }
+
+    /** 表盘缓存根目录（优先按 Context 推导，多用户下仍正确；失败回退硬编码路径）。 */
+    private File watchFaceRoot() {
+        Context ctx = targetContext();
+        File base = ctx != null ? ctx.getExternalFilesDir(null) : null;
+        if (base == null) {
+            return new File(
+                    "/storage/emulated/0/Android/data/com.mi.health/files/WatchFace");
+        }
+        return new File(base, "WatchFace");
+    }
+
     private void installHooks(ClassLoader cl) throws Throwable {
         // banner 数据 getter（首页/设备/我的/运动/公告共用底座，受总开关控制）
         hookBannerListGetter(cl, "com.fitness.banner.export.compare.BannerResponseResultV1", "getBannerList");
@@ -98,8 +189,9 @@ public class AdAwayModule extends XposedModule {
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_DEVICE_RED_DOT)) {
             hookDeviceRedDots(cl);
         }
-        // 表盘自动导出：推送前把 resource.bin 换新 ID 写一份到 Download/（实验开关门控）
-        if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_FACE_EXPORT)) {
+        // 表盘自动导出：推送前把 resource.bin 换新 ID 写一份到 Download/（实验开关门控，
+        // 安装期即要求 faceExport()，避免开关关闭时白装 dormant hook）
+        if (faceExport()) {
             hookFaceExport(cl);
         }
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ANTI_DETECT)) {
@@ -111,11 +203,11 @@ public class AdAwayModule extends XposedModule {
 
     /**
      * 让 BannerResponseResult.getBannerList() 在总开关开启时返回空列表。
-     * 注意：getter 无页面上下文，故受总开关 ESCAPE，不由单项开关控制；
+     * 注意：getter 无页面上下文，故受总开关门控，不由单项开关控制；
      * 单项页面开关在下层各自 hook 处生效。
      */
     private void hookBannerListGetter(ClassLoader cl, String clsName, String methodName) throws Throwable {
-        try {
+        tryHook(clsName + "." + methodName, () -> {
             Class<?> clazz = Class.forName(clsName, true, cl);
             Method m = clazz.getDeclaredMethod(methodName);
             m.setAccessible(true);
@@ -128,10 +220,7 @@ public class AdAwayModule extends XposedModule {
                 }
                 return Collections.emptyList();
             });
-            log(Log.INFO, TAG, "hooked: " + clsName + "." + methodName);
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: " + clsName + "." + methodName, t);
-        }
+        });
     }
 
     // ===================== 开屏广告缓存（本地） =====================
@@ -143,7 +232,7 @@ public class AdAwayModule extends XposedModule {
      * （SplashAdActivity.delChangeFiles 对 null 有判空，安全）
      */
     private void hookSplashAdPreference(ClassLoader cl) throws Throwable {
-        try {
+        tryHook("SplashAdPreference.getShowSplashAdItem", () -> {
             Class<?> clazz = Class.forName("com.xiaomi.fitness.login.ad.SplashAdPreference", true, cl);
             Method m = clazz.getDeclaredMethod("getShowSplashAdItem");
             m.setAccessible(true);
@@ -156,10 +245,7 @@ public class AdAwayModule extends XposedModule {
                 }
                 return null;
             });
-            log(Log.INFO, TAG, "hooked: SplashAdPreference.getShowSplashAdItem");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: SplashAdPreference.getShowSplashAdItem", t);
-        }
+        });
     }
 
     // ===================== 我的 tab：VIP 会员卡 =====================
@@ -171,6 +257,8 @@ public class AdAwayModule extends XposedModule {
      * 2) 源头开关：IWebSyncKt.getSHOW_AIDONG_PAYMENT_ENTRANCE → false，
      *    MineV4ViewModel.freshItemList() 不 addVipItem()，RN 不渲染会员卡。
      * 3) UI 兜底：MineVipView.onAttachedToWindow 后 GONE。
+     * （「我的」页支付宝碰一碰会员广告卡已还原不再处理：RN 渲染 Java 侧无法根治，
+     * 且此前处理引入了布局问题。）
      */
     private void hookMemberVip(ClassLoader cl) throws Throwable {
         String helper = "com.xiaomi.fitness.membership.impl.MembershipHelperImpl";
@@ -188,11 +276,6 @@ public class AdAwayModule extends XposedModule {
     }
 
     /**
-     * 「我的」页支付宝碰一碰会员广告卡（已还原，不再 hook）：
-     * 该卡由 RN 渲染，Java 侧 hook 无法根治，且此前的处理引入了布局问题。
-     */
-
-    /**
      * 「我的」tab VIP 会员卡（RN 渲染）的源头开关。
      * MineV4ViewModel.freshItemList() 中：
      *   if (whetherToShowAidongPaymentEntrance()) addVipItem();
@@ -200,7 +283,7 @@ public class AdAwayModule extends XposedModule {
      * IWebSyncKt.getSHOW_AIDONG_PAYMENT_ENTRANCE()（静态字段）。
      */
     private void hookAidongVipEntrance(ClassLoader cl) throws Throwable {
-        try {
+        tryHook("IWebSyncKt.getSHOW_AIDONG_PAYMENT_ENTRANCE", () -> {
             Class<?> clazz = Class.forName("com.xiaomi.fitness.mine.export.IWebSyncKt", true, cl);
             Method m = clazz.getDeclaredMethod("getSHOW_AIDONG_PAYMENT_ENTRANCE");
             m.setAccessible(true);
@@ -213,70 +296,64 @@ public class AdAwayModule extends XposedModule {
                 }
                 return false;
             });
-            log(Log.INFO, TAG, "hooked: IWebSyncKt.getSHOW_AIDONG_PAYMENT_ENTRANCE");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: IWebSyncKt.getSHOW_AIDONG_PAYMENT_ENTRANCE", t);
-        }
+        });
 
         // 防 JS 把开关写回 true
-        try {
+        tryHook("IWebSyncKt.setSHOW_AIDONG_PAYMENT_ENTRANCE", () -> {
             Class<?> clazz = Class.forName("com.xiaomi.fitness.mine.export.IWebSyncKt", true, cl);
             Method m = clazz.getDeclaredMethod("setSHOW_AIDONG_PAYMENT_ENTRANCE", boolean.class);
             m.setAccessible(true);
             hook(m).intercept(chain -> null);
-            log(Log.INFO, TAG, "hooked: IWebSyncKt.setSHOW_AIDONG_PAYMENT_ENTRANCE");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: IWebSyncKt.setSHOW_AIDONG_PAYMENT_ENTRANCE", t);
-        }
+        });
 
         // RN 头部会员卡：阻止 ViewModel LiveData 被填充（m519getVipInfo / m518getVipConfig）
-        try {
+        tryHook("MineV4ViewModel vip fill", () -> {
             Class<?> clazz = Class.forName("com.xiaomi.fitness.mine.v4.MineV4ViewModel", true, cl);
             for (String name : new String[]{"m519getVipInfo", "m518getVipConfig"}) {
-                Method m = clazz.getDeclaredMethod(name);
-                m.setAccessible(true);
-                hook(m).intercept(chain -> {
-                    if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_MINE_VIP)) {
-                        return chain.proceed();
-                    }
-                    if (debugLog()) {
-                        log(Log.INFO, TAG, "vip liveData fill blocked: " + name);
-                    }
-                    return null;
+                final String methodName = name;
+                tryHook("MineV4ViewModel." + methodName, () -> {
+                    Method m = clazz.getDeclaredMethod(methodName);
+                    m.setAccessible(true);
+                    hook(m).intercept(chain -> {
+                        if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_MINE_VIP)) {
+                            return chain.proceed();
+                        }
+                        if (debugLog()) {
+                            log(Log.INFO, TAG, "vip liveData fill blocked: " + methodName);
+                        }
+                        return null;
+                    });
                 });
-                log(Log.INFO, TAG, "hooked: MineV4ViewModel." + name);
             }
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: MineV4ViewModel vip fill", t);
-        }
+        });
 
         // RN 头部会员卡：getVipConfig()/getVipInfo() getter 返回空 LiveData，
         // 切断 JS 观察到的数据（含缓存），使 JS 拿到 null 无 VIP 内容可渲染
-        try {
+        tryHook("MineV4ViewModel vip getters", () -> {
             Class<?> clazz = Class.forName("com.xiaomi.fitness.mine.v4.MineV4ViewModel", true, cl);
             String[] getters = {"getVipConfig", "getVipInfo"};
             for (String name : getters) {
-                Method m = clazz.getDeclaredMethod(name);
-                m.setAccessible(true);
-                hook(m).intercept(chain -> {
-                    if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_MINE_VIP)) {
-                        return chain.proceed();
-                    }
-                    if (debugLog()) {
-                        log(Log.INFO, TAG, "vip liveData getter emptied: " + name);
-                    }
-                    return new androidx.lifecycle.MutableLiveData<>();
+                final String methodName = name;
+                tryHook("MineV4ViewModel." + methodName + " (empty LiveData)", () -> {
+                    Method m = clazz.getDeclaredMethod(methodName);
+                    m.setAccessible(true);
+                    hook(m).intercept(chain -> {
+                        if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_MINE_VIP)) {
+                            return chain.proceed();
+                        }
+                        if (debugLog()) {
+                            log(Log.INFO, TAG, "vip liveData getter emptied: " + methodName);
+                        }
+                        return new androidx.lifecycle.MutableLiveData<>();
+                    });
                 });
-                log(Log.INFO, TAG, "hooked: MineV4ViewModel." + name + " (empty LiveData)");
             }
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: MineV4ViewModel vip getters", t);
-        }
+        });
     }
 
     private void hookSuspendReturnNull(ClassLoader cl, String clsName, String methodName,
                                        String prefsKey, Class<?>... paramTypes) throws Throwable {
-        try {
+        tryHook(clsName + "." + methodName, () -> {
             Class<?> clazz = Class.forName(clsName, true, cl);
             Method m = clazz.getDeclaredMethod(methodName, paramTypes);
             m.setAccessible(true);
@@ -289,10 +366,7 @@ public class AdAwayModule extends XposedModule {
                 }
                 return null;
             });
-            log(Log.INFO, TAG, "hooked: " + clsName + "." + methodName);
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: " + clsName + "." + methodName, t);
-        }
+        });
     }
 
     /**
@@ -301,7 +375,7 @@ public class AdAwayModule extends XposedModule {
      *  因 RN 渲染链路在 Java 侧不可根治且引入了布局问题，已全部移除。）
      */
     private void hookMineVipGone(ClassLoader cl) throws Throwable {
-        try {
+        tryHook("MineVipView.onAttachedToWindow", () -> {
             Class<?> clazz = Class.forName("com.xiaomi.fitness.mine.vip.MineVipView", true, cl);
             Method m = clazz.getDeclaredMethod("onAttachedToWindow");
             m.setAccessible(true);
@@ -320,10 +394,7 @@ public class AdAwayModule extends XposedModule {
                 }
                 return null;
             });
-            log(Log.INFO, TAG, "hooked: MineVipView.onAttachedToWindow");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: MineVipView.onAttachedToWindow", t);
-        }
+        });
     }
 
     // ===================== 我的 tab：健康问诊卡 =====================
@@ -341,7 +412,7 @@ public class AdAwayModule extends XposedModule {
                 "getDoctorDataResult", Prefs.KEY_ENABLE_MINE_DOCTOR, cont);
 
         // 双保险：MineV4ViewModel.getDoctorDataResult() no-op（不再 launch 协程）
-        try {
+        tryHook("MineV4ViewModel.getDoctorDataResult", () -> {
             Class<?> clazz = Class.forName("com.xiaomi.fitness.mine.v4.MineV4ViewModel", true, cl);
             Method m = clazz.getDeclaredMethod("getDoctorDataResult");
             m.setAccessible(true);
@@ -351,7 +422,6 @@ public class AdAwayModule extends XposedModule {
                 }
                 return null;
             });
-            log(Log.INFO, TAG, "hooked: MineV4ViewModel.getDoctorDataResult");
 
             // 三保险：getDoctorDataResultLiveData() getter 返回空 LiveData（切断 JS 观察源）
             Method m2 = clazz.getDeclaredMethod("getDoctorDataResultLiveData");
@@ -365,10 +435,7 @@ public class AdAwayModule extends XposedModule {
                 }
                 return new androidx.lifecycle.MutableLiveData<>();
             });
-            log(Log.INFO, TAG, "hooked: MineV4ViewModel.getDoctorDataResultLiveData");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: MineV4ViewModel doctor", t);
-        }
+        });
     }
 
     // ===================== RN「我的」页视图树扫描兜底 =====================
@@ -381,25 +448,22 @@ public class AdAwayModule extends XposedModule {
      * 命中关键词按开关拆分：VIP 卡文案（开-即/会员/问诊/表盘 等命中任一即隐藏所在行）。
      */
     private void hookMineFragmentV4ViewScan(ClassLoader cl) throws Throwable {
-        try {
+        tryHook("MineFragmentV4.onViewCreated (view scan)", () -> {
             Class<?> clazz = Class.forName("com.xiaomi.fitness.mine.v4.MineFragmentV4", true, cl);
-            Method m = clazz.getDeclaredMethod("onViewCreated", android.view.View.class, android.os.Bundle.class);
+            Method m = clazz.getDeclaredMethod("onViewCreated", View.class, Bundle.class);
             m.setAccessible(true);
             hook(m).intercept(chain -> {
                 Object result = chain.proceed();
                 // RN 视图树异步构建，延迟多次扫描
-                final android.view.View root = (android.view.View) chain.getArg(0);
+                final View root = (View) chain.getArg(0);
                 if (root != null) {
-                    scheduleViewScan(root, 0);
+                    scheduleRepeat(root, 0, "view scan error", this::scanAndHideInternal);
                 }
                 // 表盘导出备份触发：开"我的"页即扫一次缓存（schedule 内自带开关门控）
                 scheduleExportScan();
                 return result;
             });
-            log(Log.INFO, TAG, "hooked: MineFragmentV4.onViewCreated (view scan)");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: MineFragmentV4.onViewCreated", t);
-        }
+        });
     }
 
     /**
@@ -407,90 +471,46 @@ public class AdAwayModule extends XposedModule {
      * 运动团 / 活动推荐（线上赛/奖牌赛等）由 JS 渲染，复用逐层上卷扫描。
      */
     private void hookSportTabViewScan(ClassLoader cl) throws Throwable {
-        try {
+        tryHook("SportTabV4Fragment.onViewCreated (view scan)", () -> {
             Class<?> clazz = Class.forName("com.xiaomi.fitness.sport.sporttab.SportTabV4Fragment", true, cl);
-            Method m = clazz.getDeclaredMethod("onViewCreated", android.view.View.class, android.os.Bundle.class);
+            Method m = clazz.getDeclaredMethod("onViewCreated", View.class, Bundle.class);
             m.setAccessible(true);
             hook(m).intercept(chain -> {
                 Object result = chain.proceed();
-                final android.view.View root = (android.view.View) chain.getArg(0);
+                final View root = (View) chain.getArg(0);
                 if (root != null) {
-                    scheduleSportViewScan(root, 0);
+                    mSportScrollRoot = root;
+                    scheduleRepeat(root, 0, "sport view scan error", this::scanAndHideSportInternal);
                 }
                 return result;
             });
-            log(Log.INFO, TAG, "hooked: SportTabV4Fragment.onViewCreated (view scan)");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: SportTabV4Fragment.onViewCreated", t);
-        }
+        });
     }
 
-    private void scheduleSportViewScan(final android.view.View root, final int round) {
-        if (round > 8) {
-            return;
-        }
-        mSportScrollRoot = root;
-        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    scanAndHideSport(root);
-                    scheduleSportViewScan(root, round + 1);
-                } catch (Throwable t) {
-                    log(Log.ERROR, TAG, "sport view scan error", t);
-                }
-            }
-        }, 800);
-    }
-
-    private void scheduleViewScan(final android.view.View root, final int round) {
-        if (round > 8) {
-            return;
-        }
-        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    scanAndHide(root);
-                    scheduleViewScan(root, round + 1);
-                } catch (Throwable t) {
-                    log(Log.ERROR, TAG, "view scan error", t);
-                }
-            }
-        }, 800);
-    }
-
-    /** 已处理的卡片容器（identityHashCode 去重，防止重复上移） */
-    private final java.util.Set<String> handledCards = new java.util.HashSet<>();
+    /** 已处理的卡片容器（identityHashCode 去重，防止重复上移；同步容器，扫描跑在主线程也防并发） */
+    private final Set<String> handledCards =
+            Collections.synchronizedSet(new HashSet<>());
 
     /** aqContainer 资源 id（首次扫描时按包名解析，避免异常） */
     private int mAqContainerResId;
-
-    private void scanAndHide(android.view.View v) {
-        scanAndHideInternal(v);
-    }
-
-    private void scanAndHideSport(android.view.View v) {
-        scanAndHideSportInternal(v);
-    }
 
     /**
      * 运动页锚点策略：找到「训练指标」文本，其所在行之后的所有兄弟（运动团/活动推荐
      * 运营区）整体 GONE，并清空兄弟占位；训练指标以上的正常内容（运动记录/体能状态）保留。
      */
-    private void scanAndHideSportInternal(android.view.View v) {
+    private void scanAndHideSportInternal(View v) {
         if (v == null) {
             return;
         }
-        if (v instanceof android.widget.TextView) {
-            String text = ((android.widget.TextView) v).getText().toString();
+        if (v instanceof TextView) {
+            String text = ((TextView) v).getText().toString();
             if (text != null && text.contains("训练指标")) {
                 hideBelowAnchor(v);
             }
             return;
         }
-        if (v instanceof android.view.ViewGroup) {
-            android.view.ViewGroup vg = (android.view.ViewGroup) v;
+        if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
             for (int i = 0; i < vg.getChildCount(); i++) {
                 scanAndHideSportInternal(vg.getChildAt(i));
             }
@@ -498,23 +518,23 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 找到锚点行容器，GONE 其所在内容列中位于其后的所有兄弟 */
-    private void hideBelowAnchor(android.view.View anchorText) {
+    private void hideBelowAnchor(View anchorText) {
         try {
             // 找锚点所在行容器（高度 ≤ 220 的最近父）
-            android.view.View row = anchorText;
-            android.view.ViewParent pp = anchorText.getParent();
-            if (pp instanceof android.view.ViewGroup) {
-                android.view.ViewGroup pvg = (android.view.ViewGroup) pp;
+            View row = anchorText;
+            ViewParent pp = anchorText.getParent();
+            if (pp instanceof ViewGroup) {
+                ViewGroup pvg = (ViewGroup) pp;
                 if (pvg.getHeight() <= 220) {
                     row = pvg;
                 }
             }
             // 逐层上溯，记录路径；内容列 = 第一个高度 >= 1200 的容器
-            android.view.ViewGroup contentCol = null;
-            android.view.View childInCol = row;
-            android.view.ViewParent p = row.getParent();
-            while (p instanceof android.view.ViewGroup) {
-                android.view.ViewGroup pv = (android.view.ViewGroup) p;
+            ViewGroup contentCol = null;
+            View childInCol = row;
+            ViewParent p = row.getParent();
+            while (p instanceof ViewGroup) {
+                ViewGroup pv = (ViewGroup) p;
                 if (pv.getHeight() >= 1200) {
                     contentCol = pv;
                     break;
@@ -527,29 +547,29 @@ public class AdAwayModule extends XposedModule {
                 String key = Integer.toHexString(System.identityHashCode(row));
                 if (!handledCards.contains(key)) {
                     handledCards.add(key);
-                    row.setVisibility(android.view.View.GONE);
+                    row.setVisibility(View.GONE);
                     shiftSiblingsAfter(row);
                 }
                 return;
             }
             // 若锚点行就是内容列的直接子，用之；否则用最近的非内容列祖先
-            android.view.View target = row;
-            android.view.ViewParent tp = row.getParent();
-            while (tp != contentCol && tp instanceof android.view.ViewGroup) {
-                target = (android.view.View) tp;
+            View target = row;
+            ViewParent tp = row.getParent();
+            while (tp != contentCol && tp instanceof ViewGroup) {
+                target = (View) tp;
                 tp = tp.getParent();
             }
             // 从 target（含）之后的所有兄弟全部 GONE
             boolean after = false;
             int gone = 0;
             for (int i = 0; i < contentCol.getChildCount(); i++) {
-                android.view.View child = contentCol.getChildAt(i);
+                View child = contentCol.getChildAt(i);
                 if (child == target) {
                     after = true;
                     continue;
                 }
-                if (after && child.getVisibility() != android.view.View.GONE) {
-                    child.setVisibility(android.view.View.GONE);
+                if (after && child.getVisibility() != View.GONE) {
+                    child.setVisibility(View.GONE);
                     gone++;
                 }
             }
@@ -563,10 +583,10 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 运动页根视图（scan 时缓存，用于找 ReactScrollView） */
-    private android.view.View mSportScrollRoot;
+    private View mSportScrollRoot;
 
     /** 遍历视图树找 ReactScrollView 并禁用滚动 */
-    private void disableSportScroll(android.view.View root) {
+    private void disableSportScroll(View root) {
         try {
             if (root == null) {
                 return;
@@ -574,7 +594,7 @@ public class AdAwayModule extends XposedModule {
             if (root.getClass().getName().contains("ReactScrollView")
                     || root.getClass().getName().contains("ReactHorizontalScrollView")) {
                 try {
-                    java.lang.reflect.Method m = root.getClass().getMethod("setScrollEnabled", boolean.class);
+                    Method m = root.getClass().getMethod("setScrollEnabled", boolean.class);
                     m.invoke(root, false);
                     log(Log.INFO, TAG, "scroll disabled: " + root.getClass().getSimpleName());
                 } catch (Throwable t) {
@@ -582,8 +602,8 @@ public class AdAwayModule extends XposedModule {
                 }
                 return;
             }
-            if (root instanceof android.view.ViewGroup) {
-                android.view.ViewGroup vg = (android.view.ViewGroup) root;
+            if (root instanceof ViewGroup) {
+                ViewGroup vg = (ViewGroup) root;
                 for (int i = 0; i < vg.getChildCount(); i++) {
                     disableSportScroll(vg.getChildAt(i));
                 }
@@ -593,19 +613,19 @@ public class AdAwayModule extends XposedModule {
         }
     }
 
-    private void scanAndHideInternal(android.view.View v) {
+    private void scanAndHideInternal(View v) {
         if (v == null) {
             return;
         }
-        if (v instanceof android.widget.TextView) {
-            String text = ((android.widget.TextView) v).getText().toString();
+        if (v instanceof TextView) {
+            String text = ((TextView) v).getText().toString();
             if (text != null && text.length() > 0 && isAdText(text)) {
                 hideCardContaining(v, text);
             }
             return; // TextView 无子视图
         }
-        if (v instanceof android.view.ViewGroup) {
-            android.view.ViewGroup vg = (android.view.ViewGroup) v;
+        if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
             for (int i = 0; i < vg.getChildCount(); i++) {
                 scanAndHideInternal(vg.getChildAt(i));
             }
@@ -620,13 +640,13 @@ public class AdAwayModule extends XposedModule {
      * 3. 每 GONE 一层，把该层之后的所有兄弟节点按序号上移填补空白。
      * 同一层用 identityHashCode 去重。
      */
-    private void hideCardContaining(android.view.View textView, String text) {
+    private void hideCardContaining(View textView, String text) {
         try {
             // 起始节点：文案所属行容器（高度 ≤ 220 的最近父）
-            android.view.View row = textView;
-            android.view.ViewParent pp = textView.getParent();
-            if (pp instanceof android.view.ViewGroup) {
-                android.view.ViewGroup pvg = (android.view.ViewGroup) pp;
+            View row = textView;
+            ViewParent pp = textView.getParent();
+            if (pp instanceof ViewGroup) {
+                ViewGroup pvg = (ViewGroup) pp;
                 if (pvg.getHeight() <= 220) {
                     row = pvg;
                 }
@@ -638,24 +658,24 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 逐层上卷：GONE 当前节点 → 上移兄弟 → 若父容器无正常文案则继续上卷 */
-    private void collapseUp(android.view.View node, String text) {
+    private void collapseUp(View node, String text) {
         String key = Integer.toHexString(System.identityHashCode(node));
         if (handledCards.contains(key)) {
             return;
         }
-        if (node.getVisibility() == android.view.View.GONE) {
+        if (node.getVisibility() == View.GONE) {
             handledCards.add(key);
             return;
         }
         handledCards.add(key);
-        node.setVisibility(android.view.View.GONE);
+        node.setVisibility(View.GONE);
         log(Log.INFO, TAG, "hidden: " + text.substring(0, Math.min(20, text.length()))
                 + " layer=" + node.getClass().getSimpleName() + " (h=" + node.getHeight() + ")");
         shiftSiblingsAfter(node);
 
-        android.view.ViewParent p = node.getParent();
-        if (p instanceof android.view.ViewGroup) {
-            android.view.ViewGroup parent = (android.view.ViewGroup) p;
+        ViewParent p = node.getParent();
+        if (p instanceof ViewGroup) {
+            ViewGroup parent = (ViewGroup) p;
             // 父容器已无正常文案 → 继续上卷（整卡移除）
             if (!containsNormalText(parent)) {
                 collapseUp(parent, text);
@@ -664,19 +684,19 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 该视图（含后代）是否包含「正常文案」（非广告的文本） */
-    private boolean containsNormalText(android.view.View v) {
-        if (v.getVisibility() == android.view.View.GONE) {
+    private boolean containsNormalText(View v) {
+        if (v.getVisibility() == View.GONE) {
             return false; // 已隐藏的不算
         }
-        if (v instanceof android.widget.TextView) {
-            String t = ((android.widget.TextView) v).getText().toString();
+        if (v instanceof TextView) {
+            String t = ((TextView) v).getText().toString();
             if (t == null || t.length() == 0) {
                 return false;
             }
             return !isAdText(t);
         }
-        if (v instanceof android.view.ViewGroup) {
-            android.view.ViewGroup vg = (android.view.ViewGroup) v;
+        if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
             for (int i = 0; i < vg.getChildCount(); i++) {
                 if (containsNormalText(vg.getChildAt(i))) {
                     return true;
@@ -687,22 +707,22 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 把同父容器中位于 goneView 之后的兄弟上移（按序号，不依赖 RN 布局坐标） */
-    private void shiftSiblingsAfter(android.view.View goneView) {
+    private void shiftSiblingsAfter(View goneView) {
         try {
-            android.view.ViewParent p = goneView.getParent();
-            if (!(p instanceof android.view.ViewGroup)) {
+            ViewParent p = goneView.getParent();
+            if (!(p instanceof ViewGroup)) {
                 return;
             }
-            android.view.ViewGroup vg = (android.view.ViewGroup) p;
+            ViewGroup vg = (ViewGroup) p;
             int h = goneView.getHeight();
             boolean after = false;
             for (int i = 0; i < vg.getChildCount(); i++) {
-                android.view.View child = vg.getChildAt(i);
+                View child = vg.getChildAt(i);
                 if (child == goneView) {
                     after = true;
                     continue;
                 }
-                if (after && child.getVisibility() != android.view.View.GONE) {
+                if (after && child.getVisibility() != View.GONE) {
                     child.setTranslationY(child.getTranslationY() - h);
                     if (debugLog()) {
                         log(Log.INFO, TAG, "shifted up by " + h + ": " + child.getClass().getSimpleName());
@@ -739,7 +759,7 @@ public class AdAwayModule extends XposedModule {
      * 使关闭运动开关时仅运动页恢复显示（其余 banner 页仍清空）。
      */
     private void hookSportBanner(ClassLoader cl) throws Throwable {
-        try {
+        tryHook("BannerImpl sport banner", () -> {
             Class<?> clazz = Class.forName("com.fitness.banner.export.BannerImpl", true, cl);
             Class<?> fn = Class.forName("kotlin.jvm.functions.Function1", true, cl);
 
@@ -747,13 +767,11 @@ public class AdAwayModule extends XposedModule {
             hookAsyncV1(clazz, fn);
             // V4 运动页（SportTabV4 fragment）：getBannerListAsyncV2(BannerRequestParamV2, onSuccess, onFail, netScope)
             hookAsyncV2(clazz, fn);
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: BannerImpl sport banner", t);
-        }
+        });
     }
 
     private void hookAsyncV1(Class<?> clazz, Class<?> fn) throws Throwable {
-        try {
+        tryHook("BannerImpl.getBannerListAsyncV1", () -> {
             Class<?> reqV1 = Class.forName("com.fitness.banner.export.BannerRequestParam", true, clazz.getClassLoader());
             Method m = clazz.getDeclaredMethod("getBannerListAsyncV1", reqV1, fn, fn);
             m.setAccessible(true);
@@ -767,14 +785,11 @@ public class AdAwayModule extends XposedModule {
                 }
                 return null;
             });
-            log(Log.INFO, TAG, "hooked: BannerImpl.getBannerListAsyncV1");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: BannerImpl.getBannerListAsyncV1", t);
-        }
+        });
     }
 
     private void hookAsyncV2(Class<?> clazz, Class<?> fn) throws Throwable {
-        try {
+        tryHook("BannerImpl.getBannerListAsyncV2", () -> {
             Class<?> reqV2 = Class.forName("com.fitness.banner.export.BannerRequestParamV2", true, clazz.getClassLoader());
             Class<?> scope = Class.forName("kotlinx.coroutines.CoroutineScope", true, clazz.getClassLoader());
             Method m = clazz.getDeclaredMethod("getBannerListAsyncV2", reqV2, fn, fn, scope);
@@ -789,10 +804,7 @@ public class AdAwayModule extends XposedModule {
                 }
                 return null;
             });
-            log(Log.INFO, TAG, "hooked: BannerImpl.getBannerListAsyncV2");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: BannerImpl.getBannerListAsyncV2", t);
-        }
+        });
     }
 
     // ===================== 健康页问诊卡片（Q6-B / Q7-A） =====================
@@ -805,12 +817,13 @@ public class AdAwayModule extends XposedModule {
      */
     private void hookPingAnConsult(ClassLoader cl) throws Throwable {
         String clsName = "com.xiaomi.fitness.util.PingAnHealthExtKt";
-        try {
+        tryHook(clsName, () -> {
             Class<?> clazz = Class.forName(clsName, true, cl);
             Class<?> cardView = Class.forName("com.xiaomi.fitness.view.HealthBannerCardSetView", true, cl);
             for (String name : new String[]{"bindOneBanner", "bindTwoBanners"}) {
-                try {
-                    Method m = clazz.getDeclaredMethod(name, cardView, int.class, String.class);
+                final String methodName = name;
+                tryHook(clsName + "." + methodName, () -> {
+                    Method m = clazz.getDeclaredMethod(methodName, cardView, int.class, String.class);
                     m.setAccessible(true);
                     hook(m).intercept(chain -> {
                         if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ALL)
@@ -818,18 +831,13 @@ public class AdAwayModule extends XposedModule {
                             return chain.proceed();
                         }
                         if (debugLog()) {
-                            log(Log.INFO, TAG, "consult card blocked: PingAnHealthExtKt." + name);
+                            log(Log.INFO, TAG, "consult card blocked: PingAnHealthExtKt." + methodName);
                         }
                         return null; // 跳过原方法 → 卡片不渲染
                     });
-                    log(Log.INFO, TAG, "hooked: PingAnHealthExtKt." + name);
-                } catch (Throwable t) {
-                    log(Log.ERROR, TAG, "hook failed: PingAnHealthExtKt." + name, t);
-                }
+                });
             }
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: " + clsName, t);
-        }
+        });
     }
 
     /**
@@ -842,22 +850,23 @@ public class AdAwayModule extends XposedModule {
         String[] hosts = new String[]{
                 "com.xiaomi.fitness.health.sleep.ui.SleepDayItemFragment",
                 "com.xiaomi.fitness.health.hrm.HrmDayItemFragment"};
-        android.view.View[] roots = new android.view.View[hosts.length];
+        View[] roots = new View[hosts.length];
         for (int i = 0; i < hosts.length; i++) {
             final int idx = i;
-            try {
-                Class<?> clazz = Class.forName(hosts[i], true, cl);
-                Method m = clazz.getDeclaredMethod("onViewCreated", android.view.View.class, android.os.Bundle.class);
+            final String host = hosts[i];
+            tryHook(host + ".onViewCreated (AqView hide)", () -> {
+                Class<?> clazz = Class.forName(host, true, cl);
+                Method m = clazz.getDeclaredMethod("onViewCreated", View.class, Bundle.class);
                 m.setAccessible(true);
                 hook(m).intercept(chain -> {
                     Object result = chain.proceed();
-                    android.view.View root = (android.view.View) chain.getArg(0);
+                    View root = (View) chain.getArg(0);
                     if (root != null) {
                         roots[idx] = root;
                         // 首帧前隐藏：attach 回调发生在 measure/layout/draw 之前
-                        root.addOnAttachStateChangeListener(new android.view.View.OnAttachStateChangeListener() {
+                        root.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
                             @Override
-                            public void onViewAttachedToWindow(android.view.View v) {
+                            public void onViewAttachedToWindow(View v) {
                                 try {
                                     hideAqCard(v);
                                     // 睡眠页底部研究/改善卡一并首帧隐藏
@@ -868,42 +877,22 @@ public class AdAwayModule extends XposedModule {
                             }
 
                             @Override
-                            public void onViewDetachedFromWindow(android.view.View v) {
+                            public void onViewDetachedFromWindow(View v) {
                             }
                         });
                         // 异步兜底
-                        scheduleAqScan(roots[idx], 0);
+                        scheduleRepeat(roots[idx], 0, "AqView scan error", this::hideAqCard);
                     }
                     return result;
                 });
-                log(Log.INFO, TAG, "hooked: " + hosts[i] + ".onViewCreated (AqView hide)");
-            } catch (Throwable t) {
-                log(Log.ERROR, TAG, "hook failed: " + hosts[i] + ".onViewCreated", t);
-            }
+            });
         }
-    }
-
-    private void scheduleAqScan(final android.view.View root, final int round) {
-        if (round > 8) {
-            return;
-        }
-        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    hideAqCard(root);
-                    scheduleAqScan(root, round + 1);
-                } catch (Throwable t) {
-                    log(Log.ERROR, TAG, "AqView scan error", t);
-                }
-            }
-        }, 800);
     }
 
     /** 遍历视图树，找 aqContainer（蚂蚁阿福 AI 解读卡容器）并 GONE。
      * 注意：睡眠/心率页的 aqContainer 位于 LinearLayout 中，GONE 后父容器自动重排，
      * 不能再调 shiftSiblingsAfter（会造成双重上移、内容顶进上方评分卡区域）。 */
-    private void hideAqCard(android.view.View v) {
+    private void hideAqCard(View v) {
         if (v == null) {
             return;
         }
@@ -911,18 +900,18 @@ public class AdAwayModule extends XposedModule {
             mAqContainerResId = v.getResources().getIdentifier("aqContainer", "id", "com.mi.health");
         }
         if (mAqContainerResId != 0 && v.getId() == mAqContainerResId) {
-            if (v.getVisibility() != android.view.View.GONE) {
+            if (v.getVisibility() != View.GONE) {
                 String key = Integer.toHexString(System.identityHashCode(v));
                 if (!handledCards.contains(key)) {
                     handledCards.add(key);
-                    v.setVisibility(android.view.View.GONE);
+                    v.setVisibility(View.GONE);
                     log(Log.INFO, TAG, "AqView card hidden: aqContainer");
                 }
             }
             return; // 容器内无需继续扫描
         }
-        if (v instanceof android.view.ViewGroup) {
-            android.view.ViewGroup vg = (android.view.ViewGroup) v;
+        if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
             for (int i = 0; i < vg.getChildCount(); i++) {
                 hideAqCard(vg.getChildAt(i));
             }
@@ -943,30 +932,27 @@ public class AdAwayModule extends XposedModule {
      */
     private void hookSleepCards(ClassLoader cl) throws Throwable {
         String clsName = "com.xiaomi.fitness.health.sleep.ui.SleepHealthBannerCardSetLayout";
-        try {
+        tryHook(clsName, () -> {
             Class<?> clazz = Class.forName(clsName, true, cl);
 
             // setSleepHealthBanner(Integer) —— 集合数据绑定/显隐入口
-            try {
+            tryHook(clsName + ".setSleepHealthBanner", () -> {
                 Method m = clazz.getDeclaredMethod("setSleepHealthBanner", Integer.class);
                 m.setAccessible(true);
                 hook(m).intercept(chain -> {
                     Object result = chain.proceed();
                     Object self = chain.getThisObject();
-                    if (self instanceof android.view.View) {
+                    if (self instanceof View) {
                         // 原方法内 visible(D)/(J) 已执行；同步 GONE（draw 在下一帧 → 首帧不可见）
-                        hideSleepCards((android.view.View) self);
-                        scheduleSleepCardScan((android.view.View) self, 0);
+                        hideSleepCards((View) self);
+                        scheduleRepeat((View) self, 0, "sleep card scan error", this::hideSleepCards);
                     }
                     return result;
                 });
-                log(Log.INFO, TAG, "hooked: SleepHealthBannerCardSetLayout.setSleepHealthBanner");
-            } catch (Throwable t) {
-                log(Log.ERROR, TAG, "hook failed: setSleepHealthBanner", t);
-            }
+            });
 
             // updateSleepInterfereVisibility(boolean, Function0) —— 改善计划卡显隐
-            try {
+            tryHook(clsName + ".updateSleepInterfereVisibility", () -> {
                 Class<?> fn = Class.forName("kotlin.jvm.functions.Function0", true, cl);
                 Method m = clazz.getDeclaredMethod("updateSleepInterfereVisibility", boolean.class, fn);
                 m.setAccessible(true);
@@ -980,34 +966,12 @@ public class AdAwayModule extends XposedModule {
                     }
                     return null;
                 });
-                log(Log.INFO, TAG, "hooked: SleepHealthBannerCardSetLayout.updateSleepInterfereVisibility");
-            } catch (Throwable t) {
-                log(Log.ERROR, TAG, "hook failed: updateSleepInterfereVisibility", t);
-            }
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: " + clsName, t);
-        }
-    }
-
-    private void scheduleSleepCardScan(final android.view.View root, final int round) {
-        if (round > 8) {
-            return;
-        }
-        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    hideSleepCards(root);
-                    scheduleSleepCardScan(root, round + 1);
-                } catch (Throwable t) {
-                    log(Log.ERROR, TAG, "sleep card scan error", t);
-                }
-            }
-        }, 800);
+            });
+        });
     }
 
     /** 扫描集合子树，GONE 研究卡容器与改善计划卡（LinearLayout 自动重排，不做手动 shift） */
-    private void hideSleepCards(android.view.View v) {
+    private void hideSleepCards(View v) {
         if (v == null) {
             return;
         }
@@ -1027,8 +991,8 @@ public class AdAwayModule extends XposedModule {
             goneOnce(v, "sleep interfere card");
             return;
         }
-        if (v instanceof android.view.ViewGroup) {
-            android.view.ViewGroup vg = (android.view.ViewGroup) v;
+        if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
             for (int i = 0; i < vg.getChildCount(); i++) {
                 hideSleepCards(vg.getChildAt(i));
             }
@@ -1036,8 +1000,8 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** GONE 一次并按 identityHashCode 去重（不 shift，LinearLayout 自动重排） */
-    private void goneOnce(android.view.View v, String what) {
-        if (v.getVisibility() == android.view.View.GONE) {
+    private void goneOnce(View v, String what) {
+        if (v.getVisibility() == View.GONE) {
             return;
         }
         String key = Integer.toHexString(System.identityHashCode(v));
@@ -1045,20 +1009,12 @@ public class AdAwayModule extends XposedModule {
             return;
         }
         handledCards.add(key);
-        v.setVisibility(android.view.View.GONE);
+        v.setVisibility(View.GONE);
         log(Log.INFO, TAG, "hidden: " + what + " (" + v.getClass().getSimpleName() + ")");
     }
 
     // ===================== 设备页红点（底部tab + 主页系统设置入口） =====================
 
-    /**
-     * 清除设备页红点（沿用已验证有效的"返回后清数据"方案）：
-     * 1) DeviceTabModel.getDeviceNormalTabList(model, type) —— 穿戴设备主页「系统设置」(type=9)
-     *    入口红点（rightTextWithDot=" "）；
-     * 2) DeviceTabModel.getDeviceFeatureList(model, type) —— 系统设置页列表条目
-     *    （「手环防断连保护」条目的 rightTextWithDot/remind 红点）。
-     * 两种条目都是 TabContentItem，返回后清空 rightTextWithDot/remindText/remind 即可。
-     */
     /**
      * 设备页红点消除（伪装方案，已验证有效）：
      * 1) PowerManager.isIgnoringBatteryOptimizations → true：伪装「已忽略电池优化」，
@@ -1070,11 +1026,12 @@ public class AdAwayModule extends XposedModule {
      */
     private void hookDeviceRedDots(ClassLoader cl) throws Throwable {
         // 表盘红点/运营红点 → false
-        try {
+        tryHook("FaceHelperImpl red dots", () -> {
             Class<?> face = Class.forName("com.xiaomi.fitness.watch.face.export.FaceHelperImpl", true, cl);
             for (String name : new String[]{"getFaceEntranceRedPoint", "getFaceEntranceOperationRedPoint"}) {
-                try {
-                    Method m = face.getDeclaredMethod(name, String.class);
+                final String methodName = name;
+                tryHook("FaceHelperImpl." + methodName + " (device red dot)", () -> {
+                    Method m = face.getDeclaredMethod(methodName, String.class);
                     m.setAccessible(true);
                     hook(m).intercept(chain -> {
                         if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ALL)
@@ -1083,17 +1040,12 @@ public class AdAwayModule extends XposedModule {
                         }
                         return false;
                     });
-                    log(Log.INFO, TAG, "hooked: FaceHelperImpl." + name + " (device red dot)");
-                } catch (Throwable t) {
-                    log(Log.ERROR, TAG, "hook failed: FaceHelperImpl." + name, t);
-                }
+                });
             }
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: FaceHelperImpl", t);
-        }
+        });
 
         // 伪装已忽略电池优化 → 设备tab红点 + 主页系统设置入口红点消失
-        try {
+        tryHook("PowerManager.isIgnoringBatteryOptimizations (device red dot)", () -> {
             Class<?> pmCls = Class.forName("android.os.PowerManager", true, cl);
             Method m = pmCls.getMethod("isIgnoringBatteryOptimizations", String.class);
             m.setAccessible(true);
@@ -1104,10 +1056,7 @@ public class AdAwayModule extends XposedModule {
                 }
                 return true;
             });
-            log(Log.INFO, TAG, "hooked: PowerManager.isIgnoringBatteryOptimizations (device red dot)");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: PowerManager.isIgnoringBatteryOptimizations", t);
-        }
+        });
     }
 
     // ===================== 表盘自动导出（实验） =====================
@@ -1118,15 +1067,16 @@ public class AdAwayModule extends XposedModule {
                 && Prefs.isEnabled(mPrefs, Prefs.KEY_ENABLE_FACE_EXPORT, false);
     }
 
-    /** 本进程已导出的新 ID（同进程去重） */
-    private final java.util.Set<String> exportedFaces = new java.util.HashSet<>();
+    /** 本进程已导出的新 ID（同进程去重；同步容器，intercept 可能跑在多线程） */
+    private final Set<String> exportedFaces =
+            Collections.synchronizedSet(new HashSet<>());
 
     /** 最近一次推送发起时间（ms），清理时 15 分钟内有推送则跳过 */
     private volatile long mLastPushMillis;
 
     /**
-     * 表盘自动导出：hook 表盘推送入口 doInstall(path, id, ...)，推送前把
-     * resource.bin 按"12→19"规则换新 ID，原样写一份到 Download/face_<新ID>.bin（中文名_新ID.bin），
+     * 表盘自动导出：hook 表盘推送入口 doInstall(path, id, ...)，推送时/开"我的"页时
+     * 扫缓存，把 resource.bin 按"12→19"规则换新 ID，原样写一份到 Download/face_<新ID>.bin（中文名_新ID.bin），
      * 供第三方软件直接导入。只改 ID（已验证 band 接受），不动其他字节。
      * 导出失败只记日志，绝不影响原推送流程。
      */
@@ -1139,14 +1089,13 @@ public class AdAwayModule extends XposedModule {
                 "com.xiaomi.fitness.watch.face.install.FaceInstallBleImpl",
                 "com.xiaomi.fitness.watch.face.install.FaceInstallHuamiImpl"};
         for (String clsName : impls) {
-            try {
+            tryHook(clsName + ".doInstall (face export)", () -> {
                 Class<?> clazz = Class.forName(clsName, true, cl);
                 Class<?> cb = Class.forName(
                         "com.xiaomi.fitness.watch.face.install.FaceInstallPushCallback", true, cl);
-                java.lang.reflect.Method m = resolveDoInstall(clazz, cb);
+                Method m = resolveDoInstall(clazz, cb);
                 if (m == null) {
-                    log(Log.ERROR, TAG, "hook failed: " + clsName + ".doInstall (no match)");
-                    continue;
+                    throw new NoSuchMethodException(clsName + ".doInstall");
                 }
                 m.setAccessible(true);
                 hook(m).intercept(chain -> {
@@ -1161,19 +1110,15 @@ public class AdAwayModule extends XposedModule {
                     }
                     return chain.proceed();
                 });
-                log(Log.INFO, TAG, "hooked: " + clsName + ".doInstall (face export)");
-            } catch (Throwable t) {
-                log(Log.ERROR, TAG, "hook failed: " + clsName + ".doInstall", t);
-            }
+            });
         }
         // preInstall 兜底：部分推送链路不经过 doInstall（如版本漂移），在预安装点也试一次
         for (String clsName : impls) {
-            try {
+            tryHook(clsName + ".preInstall (face export)", () -> {
                 Class<?> clazz = Class.forName(clsName, true, cl);
-                java.lang.reflect.Method m = resolvePreInstall(clazz);
+                Method m = resolvePreInstall(clazz);
                 if (m == null) {
-                    log(Log.ERROR, TAG, "hook failed: " + clsName + ".preInstall (no match)");
-                    continue;
+                    throw new NoSuchMethodException(clsName + ".preInstall");
                 }
                 m.setAccessible(true);
                 hook(m).intercept(chain -> {
@@ -1188,10 +1133,7 @@ public class AdAwayModule extends XposedModule {
                     }
                     return chain.proceed();
                 });
-                log(Log.INFO, TAG, "hooked: " + clsName + ".preInstall (face export)");
-            } catch (Throwable t) {
-                log(Log.ERROR, TAG, "hook failed: " + clsName + ".preInstall", t);
-            }
+            });
         }
     }
 
@@ -1200,10 +1142,10 @@ public class AdAwayModule extends XposedModule {
      * Integer, Function3)：前 8 精确，末参按名宽松（含 unction3 即可，
      * kotlin-stdlib 混淆导致精确匹配不可靠，见试用转正期的真机实证）。
      */
-    private java.lang.reflect.Method resolvePreInstall(Class<?> clazz) {
+    private Method resolvePreInstall(Class<?> clazz) {
         Class<?>[] leading = new Class[]{String.class, String.class, long.class, long.class,
                 boolean.class, String.class, String.class, Integer.class};
-        for (java.lang.reflect.Method cand : clazz.getDeclaredMethods()) {
+        for (Method cand : clazz.getDeclaredMethods()) {
             if (!"preInstall".equals(cand.getName())) {
                 continue;
             }
@@ -1230,14 +1172,14 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 解析 doInstall(String, String, Integer, FaceInstallPushCallback)：精确优先，名+元数回退 */
-    private java.lang.reflect.Method resolveDoInstall(Class<?> clazz, Class<?> cb) {
+    private Method resolveDoInstall(Class<?> clazz, Class<?> cb) {
         try {
             return clazz.getDeclaredMethod("doInstall", String.class, String.class,
                     Integer.class, cb);
         } catch (NoSuchMethodException e) {
             // fall through
         }
-        for (java.lang.reflect.Method cand : clazz.getDeclaredMethods()) {
+        for (Method cand : clazz.getDeclaredMethods()) {
             if ("doInstall".equals(cand.getName())
                     && cand.getParameterTypes().length == 4) {
                 log(Log.INFO, TAG, "resolved: " + clazz.getSimpleName() + ".doInstall");
@@ -1261,28 +1203,26 @@ public class AdAwayModule extends XposedModule {
      * 只动名单，不动删除逻辑本身。本地 DB 的 deleteOtherWatchFace 后续看情况再保。
      */
     private void hookFaceCleanupProtect(ClassLoader cl) throws Throwable {
-        try {
+        tryHook("cleanup protect", () -> {
             Class<?> clazz = Class.forName(
                     "com.xiaomi.fitness.watch.face.export.FaceHelperImpl", true, cl);
             hookCleanupMethod(clazz, "removeUnavailableFaces",
-                    new Class[]{java.util.List.class, java.util.List.class, java.util.List.class});
+                    new Class[]{List.class, List.class, List.class});
             hookCleanupMethod(clazz, "removeUnavailableFacesByGroup",
-                    new Class[]{java.util.List.class, int.class});
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: cleanup protect", t);
-        }
+                    new Class[]{List.class, int.class});
+        });
     }
 
     private void hookCleanupMethod(Class<?> clazz, String name, Class<?>[] params) throws Throwable {
-        java.lang.reflect.Method m = clazz.getDeclaredMethod(name, params);
+        Method m = clazz.getDeclaredMethod(name, params);
         m.setAccessible(true);
         final boolean withGroup = params.length == 2;
         hook(m).intercept(chain -> {
             if (!faceExport()) {
                 return chain.proceed();
             }
-            java.util.List<String> ids = (java.util.List<String>) chain.getArg(0);
-            java.util.List<String> kept = filterCustomFaces(ids);
+            List<String> ids = (List<String>) chain.getArg(0);
+            List<String> kept = filterCustomFaces(ids);
             if (kept.isEmpty()) {
                 log(Log.INFO, TAG, "cleanup protect: all skipped (" + name + ")");
                 return null;
@@ -1300,8 +1240,8 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 摘掉 19 号段自定义 ID，返回保留名单 */
-    private java.util.List<String> filterCustomFaces(java.util.List<String> ids) {
-        java.util.List<String> kept = new java.util.ArrayList<>();
+    private List<String> filterCustomFaces(List<String> ids) {
+        List<String> kept = new ArrayList<>();
         if (ids == null) {
             return kept;
         }
@@ -1325,25 +1265,24 @@ public class AdAwayModule extends XposedModule {
             return;
         }
         try {
-            java.io.File root = new java.io.File(
-                    "/storage/emulated/0/Android/data/com.mi.health/files/WatchFace");
-            java.io.File[] dids = root.listFiles();
+            File root = watchFaceRoot();
+            File[] dids = root.listFiles();
             if (dids == null) {
                 return;
             }
             int found = 0;
             int fresh = 0;
             int cleaned = 0;
-            java.util.Set<String> markedBefore = snapshotExportedMarks();
-            for (java.io.File did : dids) {
+            Set<String> markedBefore = snapshotExportedMarks();
+            for (File did : dids) {
                 if (!did.isDirectory()) {
                     continue;
                 }
-                java.io.File[] faces = did.listFiles();
+                File[] faces = did.listFiles();
                 if (faces == null) {
                     continue;
                 }
-                for (java.io.File face : faces) {
+                for (File face : faces) {
                     if (!face.isDirectory()) {
                         continue;
                     }
@@ -1364,37 +1303,24 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 已导出 ID 的跨进程记录（目标 App 自有 prefs；RemotePreferences 在目标进程只读） */
-    private static final String PREF_EXPORTED_IDS = "exported_face_ids";
+    private static final String PREF_EXPORTED_IDS = "exported_face_ids"; // 老 CSV 格式，只读迁移
+    private static final String PREF_EXPORTED_ID_SET = "exported_face_id_set";
 
-    private android.content.SharedPreferences exportPrefs() {
-        try {
-            Object app = Class.forName("android.app.ActivityThread")
-                    .getMethod("currentApplication").invoke(null);
-            android.content.Context ctx = (android.content.Context) app;
-            return ctx.getSharedPreferences("adaway_face_export",
-                    android.content.Context.MODE_PRIVATE);
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "export prefs failed", t);
+    private SharedPreferences exportPrefs() {
+        Context ctx = targetContext();
+        if (ctx == null) {
             return null;
         }
+        return ctx.getSharedPreferences("adaway_face_export",
+                Context.MODE_PRIVATE);
     }
 
     private boolean isExportedMarked(String newId) {
-        try {
-            android.content.SharedPreferences sp = exportPrefs();
-            if (sp == null || newId == null) {
-                return false;
-            }
-            String csv = sp.getString(PREF_EXPORTED_IDS, "");
-            if (csv == null || csv.isEmpty()) {
-                return false;
-            }
-            for (String s : csv.split(",")) {
-                if (newId.equals(s)) {
-                    return true;
-                }
-            }
+        if (newId == null) {
             return false;
+        }
+        try {
+            return snapshotExportedMarks().contains(newId);
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "read exported marks failed", t);
             return false;
@@ -1403,23 +1329,16 @@ public class AdAwayModule extends XposedModule {
 
     private void markExported(String newId) {
         try {
-            android.content.SharedPreferences sp = exportPrefs();
+            SharedPreferences sp = exportPrefs();
             if (sp == null || newId == null) {
                 return;
             }
-            String csv = sp.getString(PREF_EXPORTED_IDS, "");
-            if (csv == null) {
-                csv = "";
+            Set<String> set = new HashSet<>(snapshotExportedMarks());
+            if (!set.add(newId)) {
+                return; // 已标记
             }
-            if (!csv.isEmpty()) {
-                for (String s : csv.split(",")) {
-                    if (newId.equals(s)) {
-                        return;
-                    }
-                }
-            }
-            sp.edit().putString(PREF_EXPORTED_IDS,
-                    csv.isEmpty() ? newId : csv + "," + newId).apply();
+            // 写新 Set 格式并清掉老 CSV（老数据已并入 set，不丢失）
+            sp.edit().putStringSet(PREF_EXPORTED_ID_SET, set).remove(PREF_EXPORTED_IDS).apply();
             log(Log.INFO, TAG, "marked exported: " + newId);
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "mark exported failed", t);
@@ -1427,20 +1346,24 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 本次扫描开始前的已标记集合快照（清理只认快照里的，避免误删刚导出的） */
-    private java.util.Set<String> snapshotExportedMarks() {
-        java.util.Set<String> set = new java.util.HashSet<>();
+    private Set<String> snapshotExportedMarks() {
+        Set<String> set = new HashSet<>();
         try {
-            android.content.SharedPreferences sp = exportPrefs();
+            SharedPreferences sp = exportPrefs();
             if (sp == null) {
                 return set;
             }
-            String csv = sp.getString(PREF_EXPORTED_IDS, "");
-            if (csv == null || csv.isEmpty()) {
-                return set;
+            Set<String> saved = sp.getStringSet(PREF_EXPORTED_ID_SET, null);
+            if (saved != null) {
+                set.addAll(saved);
             }
-            for (String s : csv.split(",")) {
-                if (s != null && !s.isEmpty()) {
-                    set.add(s);
+            // 兼容老版本 CSV 记录
+            String csv = sp.getString(PREF_EXPORTED_IDS, "");
+            if (csv != null && !csv.isEmpty()) {
+                for (String s : csv.split(",")) {
+                    if (s != null && !s.isEmpty()) {
+                        set.add(s);
+                    }
                 }
             }
         } catch (Throwable t) {
@@ -1454,7 +1377,7 @@ public class AdAwayModule extends XposedModule {
      * 快照命中 + 60 秒交接保护 + 15 分钟推送保护，三道缺一不可
      * （防删刚下载未推送、正在推送的文件）。
      */
-    private boolean cleanOldBin(java.io.File faceDir, java.util.Set<String> markedBefore) {
+    private boolean cleanOldBin(File faceDir, Set<String> markedBefore) {
         try {
             if (faceDir == null || !faceDir.isDirectory()) {
                 return false;
@@ -1483,13 +1406,13 @@ public class AdAwayModule extends XposedModule {
         }
     }
 
-    private boolean deleteRecursive(java.io.File f) {
+    private boolean deleteRecursive(File f) {
         boolean ok = true;
         try {
             if (f.isDirectory()) {
-                java.io.File[] kids = f.listFiles();
+                File[] kids = f.listFiles();
                 if (kids != null) {
-                    for (java.io.File k : kids) {
+                    for (File k : kids) {
                         ok = deleteRecursive(k) && ok;
                     }
                 }
@@ -1523,14 +1446,16 @@ public class AdAwayModule extends XposedModule {
     /** Toast 兜底：通知栏权限被关时也能看到（小米运动健康的通知权限当前是关的） */
     private void toastResult(final String text) {
         try {
-            new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+            new Handler(Looper.getMainLooper()).post(new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        Object app = Class.forName("android.app.ActivityThread")
-                                .getMethod("currentApplication").invoke(null);
-                        android.widget.Toast.makeText((android.content.Context) app,
-                                text, android.widget.Toast.LENGTH_LONG).show();
+                        Context ctx = targetContext();
+                        if (ctx == null) {
+                            return;
+                        }
+                        Toast.makeText(ctx,
+                                text, Toast.LENGTH_LONG).show();
                     } catch (Throwable t) {
                         log(Log.ERROR, TAG, "toast failed", t);
                     }
@@ -1543,22 +1468,23 @@ public class AdAwayModule extends XposedModule {
 
     private void notifyExport(String title, String text) {
         try {
-            Object app = Class.forName("android.app.ActivityThread")
-                    .getMethod("currentApplication").invoke(null);
-            android.content.Context ctx = (android.content.Context) app;
-            Object nmObj = ctx.getSystemService(android.content.Context.NOTIFICATION_SERVICE);
-            android.app.NotificationManager nm = (android.app.NotificationManager) nmObj;
+            Context ctx = targetContext();
+            if (ctx == null) {
+                return;
+            }
+            Object nmObj = ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            NotificationManager nm = (NotificationManager) nmObj;
             String ch = "face_export";
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
-                android.app.NotificationChannel c = new android.app.NotificationChannel(
-                        ch, "表盘导出", android.app.NotificationManager.IMPORTANCE_DEFAULT);
+            if (Build.VERSION.SDK_INT >= 26) {
+                NotificationChannel c = new NotificationChannel(
+                        ch, "表盘导出", NotificationManager.IMPORTANCE_DEFAULT);
                 nm.createNotificationChannel(c);
             }
-            android.app.Notification.Builder b;
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
-                b = new android.app.Notification.Builder(ctx, ch);
+            Notification.Builder b;
+            if (Build.VERSION.SDK_INT >= 26) {
+                b = new Notification.Builder(ctx, ch);
             } else {
-                b = new android.app.Notification.Builder(ctx);
+                b = new Notification.Builder(ctx);
             }
             b.setContentTitle(title).setContentText(text)
                     .setSmallIcon(android.R.drawable.stat_sys_download_done)
@@ -1575,7 +1501,7 @@ public class AdAwayModule extends XposedModule {
             return;
         }
         try {
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+            new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                 @Override
                 public void run() {
                     try {
@@ -1609,7 +1535,7 @@ public class AdAwayModule extends XposedModule {
         if (isExportedMarked(newId)) {
             return false; // 跨进程去重（MediaStore 查询不可靠，改走 prefs 记录）
         }
-        java.io.File src = findFaceBin(faceId);
+        File src = findFaceBin(faceId);
         if (src == null) {
             log(Log.ERROR, TAG, "face export skip: bin not found id=" + faceId);
             return false;
@@ -1648,13 +1574,13 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 从同目录 description.xml 读表盘中文名（供导出文件名用，失败返回 null） */
-    private String readFaceName(java.io.File bin) {
+    private String readFaceName(File bin) {
         try {
-            java.io.File parent = bin.getParentFile();
+            File parent = bin.getParentFile();
             if (parent == null) {
                 return null;
             }
-            java.io.File xml = new java.io.File(parent, "description.xml");
+            File xml = new File(parent, "description.xml");
             if (!xml.isFile() || xml.length() <= 0 || xml.length() > 65536) {
                 return null;
             }
@@ -1690,33 +1616,31 @@ public class AdAwayModule extends XposedModule {
     }
 
     /** 按 faceId 在 WatchFace 缓存目录搜 resource.bin */
-    private java.io.File findFaceBin(String faceId) {
+    private File findFaceBin(String faceId) {
         try {
-            java.io.File root = new java.io.File(
-                    "/storage/emulated/0/Android/data/com.mi.health/files/WatchFace");
-            return searchBin(root, faceId, 0);
+            return searchBin(watchFaceRoot(), faceId, 0);
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "face bin search error", t);
             return null;
         }
     }
 
-    private java.io.File searchBin(java.io.File dir, String faceId, int depth) {
+    private File searchBin(File dir, String faceId, int depth) {
         if (dir == null || depth > 4 || !dir.isDirectory()) {
             return null;
         }
-        java.io.File[] kids = dir.listFiles();
+        File[] kids = dir.listFiles();
         if (kids == null) {
             return null;
         }
-        for (java.io.File k : kids) {
+        for (File k : kids) {
             if (k.isFile() && "resource.bin".equals(k.getName())
                     && k.getAbsolutePath().contains(faceId)) {
                 return k;
             }
         }
-        for (java.io.File k : kids) {
-            java.io.File hit = searchBin(k, faceId, depth + 1);
+        for (File k : kids) {
+            File hit = searchBin(k, faceId, depth + 1);
             if (hit != null) {
                 return hit;
             }
@@ -1724,8 +1648,8 @@ public class AdAwayModule extends XposedModule {
         return null;
     }
 
-    private byte[] readAll(java.io.File f) throws Throwable {
-        java.io.FileInputStream in = new java.io.FileInputStream(f);
+    private byte[] readAll(File f) throws Throwable {
+        FileInputStream in = new FileInputStream(f);
         try {
             long len = f.length();
             if (len <= 0 || len > 64 * 1024 * 1024) {
@@ -1774,13 +1698,14 @@ public class AdAwayModule extends XposedModule {
      * 低版本回退直接写 Download 目录；同名已存在则跳过（跨进程去重）。
      */
     private Object writeToDownload(String fileName, byte[] data) throws Throwable {
-        Object app = Class.forName("android.app.ActivityThread")
-                .getMethod("currentApplication").invoke(null);
-        android.content.Context ctx = (android.content.Context) app;
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            android.content.ContentResolver cr = ctx.getContentResolver();
-            android.net.Uri coll = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI;
-            android.database.Cursor c = null;
+        Context ctx = targetContext();
+        if (ctx == null) {
+            throw new RuntimeException("target context null");
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            ContentResolver cr = ctx.getContentResolver();
+            Uri coll = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+            Cursor c = null;
             try {
                 c = cr.query(coll, new String[]{"_id"},
                         "_display_name=?", new String[]{fileName}, null);
@@ -1797,15 +1722,15 @@ public class AdAwayModule extends XposedModule {
                     }
                 }
             }
-            android.content.ContentValues cv = new android.content.ContentValues();
+            ContentValues cv = new ContentValues();
             cv.put("_display_name", fileName);
             cv.put("mime_type", "application/octet-stream");
             cv.put("relative_path", "Download");
-            android.net.Uri uri = cr.insert(coll, cv);
+            Uri uri = cr.insert(coll, cv);
             if (uri == null) {
                 throw new RuntimeException("mediastore insert null");
             }
-            java.io.OutputStream out = null;
+            OutputStream out = null;
             try {
                 out = cr.openOutputStream(uri);
                 if (out == null) {
@@ -1823,14 +1748,14 @@ public class AdAwayModule extends XposedModule {
             }
             return uri;
         }
-        java.io.File dir = android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_DOWNLOADS);
-        java.io.File out = new java.io.File(dir, fileName);
+        File dir = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS);
+        File out = new File(dir, fileName);
         if (out.isFile()) {
             log(Log.INFO, TAG, "face export skip: already in Download");
             return null;
         }
-        java.io.FileOutputStream fos = new java.io.FileOutputStream(out);
+        FileOutputStream fos = new FileOutputStream(out);
         try {
             fos.write(data);
         } finally {
@@ -1847,21 +1772,21 @@ public class AdAwayModule extends XposedModule {
 
     private void hookSensorHelper(ClassLoader cl) throws Throwable {
         String clsName = "com.xiaomi.verificationsdk.internal.SensorHelper";
-        try {
+        tryHook(clsName + ".A/.D", () -> {
             Class<?> clazz = Class.forName(clsName, true, cl);
             for (String name : new String[]{"A", "D"}) {
-                Method m = clazz.getDeclaredMethod(name);
-                m.setAccessible(true);
-                hook(m).intercept(chain -> {
-                    if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ANTI_DETECT)) {
-                        return chain.proceed();
-                    }
-                    return 0;
+                final String methodName = name;
+                tryHook(clsName + "." + methodName, () -> {
+                    Method m = clazz.getDeclaredMethod(methodName);
+                    m.setAccessible(true);
+                    hook(m).intercept(chain -> {
+                        if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ANTI_DETECT)) {
+                            return chain.proceed();
+                        }
+                        return 0;
+                    });
                 });
             }
-            log(Log.INFO, TAG, "anti-detect hooked: " + clsName + ".A/.D");
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook failed: " + clsName, t);
-        }
+        });
     }
 }

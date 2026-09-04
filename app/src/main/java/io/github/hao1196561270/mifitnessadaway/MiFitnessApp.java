@@ -16,6 +16,8 @@ public class MiFitnessApp extends Application implements XposedServiceHelper.OnS
     private final Set<XposedServiceHelper.OnServiceListener> listeners =
             new CopyOnWriteArraySet<>();
 
+    private XposedService mService;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -32,8 +34,6 @@ public class MiFitnessApp extends Application implements XposedServiceHelper.OnS
     public void removeServiceStateListener(XposedServiceHelper.OnServiceListener l) {
         listeners.remove(l);
     }
-
-    private XposedService mService;
 
     @Override
     public void onServiceBind(XposedService service) {
