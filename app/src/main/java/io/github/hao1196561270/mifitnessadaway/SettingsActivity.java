@@ -1,6 +1,7 @@
 package io.github.hao1196561270.mifitnessadaway;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.graphics.Color;
@@ -32,6 +33,8 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
 
     private XposedService mService;
     private final Map<String, Switch> switches = new LinkedHashMap<>();
+    /** 初始化回填开关状态时为 true：此时 setChecked 触发的 listener 不弹说明框 */
+    private boolean mBindingDefaults;
 
     /** 是否深色模式 */
     private boolean isDarkMode() {
@@ -165,6 +168,10 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
                 if (Prefs.KEY_HIDE_ICON.equals(key)) {
                     applyLauncherIcon(!isChecked);
                 }
+                // 表盘导出：用户手动打开时弹说明（初始化回填不弹）
+                if (Prefs.KEY_ENABLE_FACE_EXPORT.equals(key) && isChecked && !mBindingDefaults) {
+                    showFaceExportNotice();
+                }
             }
         });
     }
@@ -211,6 +218,7 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
             @Override
             public void run() {
                 SharedPreferences sp = mService.getRemotePreferences(Prefs.GROUP);
+                mBindingDefaults = true;
                 for (Map.Entry<String, Switch> e : switches.entrySet()) {
                     if (Prefs.KEY_HIDE_ICON.equals(e.getKey())) {
                         // 开关语义=「隐藏图标」：图标显示(TRUE)时开关应 OFF
@@ -222,8 +230,35 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
                         e.getValue().setChecked(sp.getBoolean(e.getKey(), true));
                     }
                 }
+                mBindingDefaults = false;
             }
         });
+    }
+
+    /**
+     * 表盘自动导出说明：用户手动打开开关时弹窗一次。
+     * 开关默认关闭（见 onServiceBind 回填），关闭后重开会再次提示。
+     */
+    private void showFaceExportNotice() {
+        new AlertDialog.Builder(this)
+                .setTitle("表盘自动导出（实验）")
+                .setMessage("开启后，试用表盘下载完成后会自动导出：\n\n"
+                        + "• 换新 ID（12→19 前缀，等长替换）\n"
+                        + "• 以“中文名_新ID.bin”存到 Download/ 目录\n"
+                        + "• 可用第三方软件（如 AstroBox）导入手环\n"
+                        + "• 导出 ID 自动防删除保护，同步不再被清掉\n"
+                        + "• 已导出缓存下次扫描自动清理\n"
+                        + "• 每次扫描经 Toast/通知告知结果\n\n"
+                        + "使用步骤：\n"
+                        + "1. 此开关保持开启\n"
+                        + "2. 在运动健康里试用喜欢的表盘，等下载完成\n"
+                        + "3. 打开 App“我的”页，停留几秒触发扫描\n"
+                        + "4. 去手机 Download/ 目录，按“中文名_新ID.bin”找文件\n"
+                        + "5. 用 AstroBox 等第三方软件把文件导入手环\n\n"
+                        + "注意：通知需给运动健康开通知权限，Toast 始终有效；"
+                        + "已导出的不会重复导出。")
+                .setPositiveButton("知道了", null)
+                .show();
     }
 
     /** 桌面图标 alias 当前是否启用 */

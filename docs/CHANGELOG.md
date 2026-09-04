@@ -1,5 +1,25 @@
 # Changelog 更新日志
 
+## v1.0.5 (versionCode 25)
+
+### English
+
+**New: Export explanation dialog**
+Turning on "Watchface auto-export (experimental)" now pops up a short guide: what auto-export does (re-ID'd `12→19` → `Download/`, third-party import, cleanup protection, exported-cache auto-cleanup, Toast/notification results) plus step-by-step usage. It shows only when the switch is manually flipped on — reopening settings never pops it again.
+
+**Note**
+The export switch stays off by default; all existing ad-removal and export features unchanged. v1.0.3 users should still upgrade (v1.0.3 keeps every trialed face in cache; fixed since v1.0.4).
+
+### 中文
+
+**新增：导出说明弹窗**
+打开「表盘自动导出（实验）」时弹出说明：导出的作用（换新 ID 12→19 → Download/、第三方导入、防删除保护、缓存自动清理、Toast/通知反馈）+ 分步用法。只在手动打开时弹一次，重进设置页不再打扰。
+
+**其他**
+导出开关默认关闭；原有去广告与导出功能不变。1.0.3 用户建议升级（1.0.3 缓存堆积问题自 1.0.4 起已修复）。
+
+---
+
 ## v1.0.4 (versionCode 24)
 
 ### English
