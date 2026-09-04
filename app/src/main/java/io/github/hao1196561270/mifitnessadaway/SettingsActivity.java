@@ -3,7 +3,6 @@ package io.github.hao1196561270.mifitnessadaway;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
-import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;

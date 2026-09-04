@@ -4,7 +4,7 @@ English | [中文](README_zh.md)
 
 Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.58.0), built as a modern **libxposed API 102** LSPosed module (requires LSPosed ≥ v2.1.1 / KernelSU).
 
-> **v1.0.3 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
+> **v1.0.4 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
 
 ## Features
 
@@ -45,7 +45,7 @@ The settings UI follows the system dark/light theme.
 - **Health detail pages**: the "AntBoy AI" interpretation card (AqView) and sleep research/improvement cards are hidden via view-tree scan with resource-id targeting.
 - **Device red dots**: `PowerManager.isIgnoringBatteryOptimizations` is faked to true (equivalent to "battery optimization ignored") plus face-entrance red-dot getters return false, which removes the bottom-nav "Device" tab dot and the home "System settings" entry dot.
 - **Sport anchor strategy**: everything below the "training index" anchor is removed as a whole, and page scrolling is disabled.
-- **Watchface auto-export (experimental)**: after a trial download, the cached `resource.bin` is re-ID'd (`12→19` prefix swap, same length) and written to `Download/` under its Chinese name for third-party import; exported IDs are filtered out of the server-side cleanup list so sideloaded faces survive sync; exported cache older than 5 minutes is auto-removed; every scan reports via Toast/notification.
+- **Watchface auto-export (experimental)**: after a trial download, the cached `resource.bin` is re-ID'd (`12→19` prefix swap, same length) and written to `Download/` under its Chinese name for third-party import; exported IDs are filtered out of the server-side cleanup list so sideloaded faces survive sync; exported cache is removed whole-directory on the next scan (snapshot-based, with handoff/push guards); every scan reports via Toast/notification.
 
 ## Requirements
 

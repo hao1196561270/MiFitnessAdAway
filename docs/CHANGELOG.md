@@ -1,5 +1,31 @@
 # Changelog 更新日志
 
+## v1.0.4 (versionCode 24)
+
+### English
+
+**Improved: Exported cache cleanup**
+Exported face cache is now removed whole-directory on the next scan after export (previously: only `resource.bin` older than 5 minutes), so only the just-downloaded face stays cached. Snapshot-based matching plus 60-second handoff and 15-minute push guards prevent deleting files mid-download or mid-transfer.
+
+**Cleanup: Dead code removal**
+Removed unused parameter plumbing in the export chain and an unused import; no behavior change besides the cleanup upgrade above.
+
+**Code**
+All existing ad-removal and export features unchanged.
+
+### 中文
+
+**改进：已导出缓存清理**
+已导出表盘缓存改为导出后下次扫描即整目录删除（之前：仅删超 5 分钟的 `resource.bin`），缓存里只留本次下载的。快照匹配 + 60 秒交接保护 + 15 分钟推送保护，不误删正在下载/传输的文件。
+
+**清理：无用代码**
+清理导出链路上无用的参数传递与无用 import；除上述清理升级外无行为变化。
+
+**其他**
+原有去广告与导出功能保持不变。
+
+---
+
 ## v1.0.3 (versionCode 23)
 
 ### English

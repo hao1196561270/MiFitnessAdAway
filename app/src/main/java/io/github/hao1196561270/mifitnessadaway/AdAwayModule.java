@@ -1334,6 +1334,7 @@ public class AdAwayModule extends XposedModule {
             int found = 0;
             int fresh = 0;
             int cleaned = 0;
+            java.util.Set<String> markedBefore = snapshotExportedMarks();
             for (java.io.File did : dids) {
                 if (!did.isDirectory()) {
                     continue;
@@ -1347,9 +1348,9 @@ public class AdAwayModule extends XposedModule {
                         continue;
                     }
                     found++;
-                    if (exportFace(null, face.getName())) {
+                    if (exportFace(face.getName())) {
                         fresh++;
-                    } else if (cleanOldBin(face)) {
+                    } else if (cleanOldBin(face, markedBefore)) {
                         cleaned++;
                     }
                 }
@@ -1362,15 +1363,29 @@ public class AdAwayModule extends XposedModule {
         }
     }
 
-    /** 已导出 ID 的跨进程记录（RemotePreferences，MediaStore 查询不可靠） */
+    /** 已导出 ID 的跨进程记录（目标 App 自有 prefs；RemotePreferences 在目标进程只读） */
     private static final String PREF_EXPORTED_IDS = "exported_face_ids";
+
+    private android.content.SharedPreferences exportPrefs() {
+        try {
+            Object app = Class.forName("android.app.ActivityThread")
+                    .getMethod("currentApplication").invoke(null);
+            android.content.Context ctx = (android.content.Context) app;
+            return ctx.getSharedPreferences("adaway_face_export",
+                    android.content.Context.MODE_PRIVATE);
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "export prefs failed", t);
+            return null;
+        }
+    }
 
     private boolean isExportedMarked(String newId) {
         try {
-            if (mPrefs == null || newId == null) {
+            android.content.SharedPreferences sp = exportPrefs();
+            if (sp == null || newId == null) {
                 return false;
             }
-            String csv = mPrefs.getString(PREF_EXPORTED_IDS, "");
+            String csv = sp.getString(PREF_EXPORTED_IDS, "");
             if (csv == null || csv.isEmpty()) {
                 return false;
             }
@@ -1388,10 +1403,11 @@ public class AdAwayModule extends XposedModule {
 
     private void markExported(String newId) {
         try {
-            if (mPrefs == null || newId == null) {
+            android.content.SharedPreferences sp = exportPrefs();
+            if (sp == null || newId == null) {
                 return;
             }
-            String csv = mPrefs.getString(PREF_EXPORTED_IDS, "");
+            String csv = sp.getString(PREF_EXPORTED_IDS, "");
             if (csv == null) {
                 csv = "";
             }
@@ -1402,7 +1418,7 @@ public class AdAwayModule extends XposedModule {
                     }
                 }
             }
-            mPrefs.edit().putString(PREF_EXPORTED_IDS,
+            sp.edit().putString(PREF_EXPORTED_IDS,
                     csv.isEmpty() ? newId : csv + "," + newId).apply();
             log(Log.INFO, TAG, "marked exported: " + newId);
         } catch (Throwable t) {
@@ -1410,40 +1426,76 @@ public class AdAwayModule extends XposedModule {
         }
     }
 
+    /** 本次扫描开始前的已标记集合快照（清理只认快照里的，避免误删刚导出的） */
+    private java.util.Set<String> snapshotExportedMarks() {
+        java.util.Set<String> set = new java.util.HashSet<>();
+        try {
+            android.content.SharedPreferences sp = exportPrefs();
+            if (sp == null) {
+                return set;
+            }
+            String csv = sp.getString(PREF_EXPORTED_IDS, "");
+            if (csv == null || csv.isEmpty()) {
+                return set;
+            }
+            for (String s : csv.split(",")) {
+                if (s != null && !s.isEmpty()) {
+                    set.add(s);
+                }
+            }
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "snapshot marks failed", t);
+        }
+        return set;
+    }
+
     /**
-     * 清旧缓存：已导出超过 5 分钟的 resource.bin 删除（只删大文件，描述/预览保留，
-     * App 显示不受影响；叠加 15 分钟推送保护，防删正在传的文件）。
+     * 清旧缓存：本次扫描开始前已标记的表盘整目录删除，只留本次下载的。
+     * 快照命中 + 60 秒交接保护 + 15 分钟推送保护，三道缺一不可
+     * （防删刚下载未推送、正在推送的文件）。
      */
-    private boolean cleanOldBin(java.io.File faceDir) {
+    private boolean cleanOldBin(java.io.File faceDir, java.util.Set<String> markedBefore) {
         try {
             if (faceDir == null || !faceDir.isDirectory()) {
                 return false;
             }
             String newId = remapFaceId(faceDir.getName());
-            if (newId == null || !isExportedMarked(newId)) {
-                return false;
+            if (newId == null || !markedBefore.contains(newId)) {
+                return false; // 本次扫描前未标记的不删（刚导出的下次才删）
             }
-            java.io.File[] hashes = faceDir.listFiles();
-            if (hashes == null) {
-                return false;
-            }
-            boolean cleaned = false;
             long now = System.currentTimeMillis();
             // 15 分钟内有过推送则整单跳过（防删正在传的文件）
             if (now - mLastPushMillis < 15L * 60 * 1000) {
                 return false;
             }
-            long cutoff = now - 5L * 60 * 1000;
-            for (java.io.File h : hashes) {
-                java.io.File bin = new java.io.File(h, "resource.bin");
-                if (bin.isFile() && bin.lastModified() < cutoff && bin.delete()) {
-                    log(Log.INFO, TAG, "cache cleaned: " + bin.getAbsolutePath());
-                    cleaned = true;
-                }
+            // 60 秒交接保护（防删刚下载、推送还没开始的文件）
+            if (faceDir.lastModified() >= now - 60L * 1000) {
+                return false;
             }
-            return cleaned;
+            if (deleteRecursive(faceDir)) {
+                log(Log.INFO, TAG, "cache cleaned: " + faceDir.getAbsolutePath());
+                return true;
+            }
+            return false;
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "cache clean error", t);
+            return false;
+        }
+    }
+
+    private boolean deleteRecursive(java.io.File f) {
+        boolean ok = true;
+        try {
+            if (f.isDirectory()) {
+                java.io.File[] kids = f.listFiles();
+                if (kids != null) {
+                    for (java.io.File k : kids) {
+                        ok = deleteRecursive(k) && ok;
+                    }
+                }
+            }
+            return f.delete() && ok;
+        } catch (Throwable t) {
             return false;
         }
     }
@@ -1539,10 +1591,10 @@ public class AdAwayModule extends XposedModule {
     }
 
     /**
-     * 导出流程：找 resource.bin → 内存换 ID → 写 Download/face_<新ID>.bin。
-     * path 非常规时回退按 faceId 在 WatchFace 缓存目录下搜 resource.bin。
+     * 导出流程：按 faceId 在 WatchFace 缓存目录找 resource.bin → 内存换 ID
+     * → 写 Download/face_<新ID>.bin。
      */
-    private boolean exportFace(String path, String faceId) {
+    private boolean exportFace(String faceId) {
         String newId = remapFaceId(faceId);
         if (newId == null) {
             return false; // 非 12 位 ID 直接跳过（不记 error，避免扫盘刷屏）
@@ -1557,7 +1609,7 @@ public class AdAwayModule extends XposedModule {
         if (isExportedMarked(newId)) {
             return false; // 跨进程去重（MediaStore 查询不可靠，改走 prefs 记录）
         }
-        java.io.File src = findFaceBin(path, faceId);
+        java.io.File src = findFaceBin(faceId);
         if (src == null) {
             log(Log.ERROR, TAG, "face export skip: bin not found id=" + faceId);
             return false;
@@ -1637,14 +1689,8 @@ public class AdAwayModule extends XposedModule {
         }
     }
 
-    /** 定位 resource.bin：优先 doInstall 传的 path，否则按 faceId 搜缓存目录 */
-    private java.io.File findFaceBin(String path, String faceId) {
-        if (path != null) {
-            java.io.File f = new java.io.File(path);
-            if (f.isFile() && f.length() > 0) {
-                return f;
-            }
-        }
+    /** 按 faceId 在 WatchFace 缓存目录搜 resource.bin */
+    private java.io.File findFaceBin(String faceId) {
         try {
             java.io.File root = new java.io.File(
                     "/storage/emulated/0/Android/data/com.mi.health/files/WatchFace");
