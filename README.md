@@ -4,7 +4,7 @@ English | [中文](README_zh.md)
 
 Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.58.0), built as a modern **libxposed API 102** LSPosed module (requires LSPosed ≥ v2.1.1 / KernelSU).
 
-> **v1.0.2 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact.
+> **v1.0.3 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
 
 ## Features
 
@@ -22,14 +22,16 @@ Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.58.
 | "PingAn Health" consultation cards (data-layer: bindOneBanner/bindTwoBanners) | ✅ |
 | "AntBoy AI" interpretation card (top of Sleep / Heart rate pages) | ✅ |
 | Sleep page research / improvement cards (sleep-breathing-apnea research, sleep-health research, 21-day improvement plan) | ✅ |
+| Trial watchface auto-export (re-ID'd → Download/, third-party import) + cleanup protection | ✅ (experimental) |
 
-The module app ships with a **settings UI** with 15 toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
+The module app ships with a **settings UI** with 16 toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
 
 - Master (enable ad-removal)
 - Home / device / mine VIP / mine doctor / sport carousel / sport operation / splash / announcement toggles
 - Health consultation card (Sleep / Heart rate / SpO₂ pages)
 - Sleep research / improvement cards
 - Device red dots (bottom nav + system settings entry)
+- Watchface auto-export (experimental, off by default)
 - Anti-hook detection (`SensorHelper.A()/D()` → 0)
 - **Hide launcher icon** (applies instantly, no restart needed; the settings page stays reachable from LSPosed)
 - Debug log
@@ -43,6 +45,7 @@ The settings UI follows the system dark/light theme.
 - **Health detail pages**: the "AntBoy AI" interpretation card (AqView) and sleep research/improvement cards are hidden via view-tree scan with resource-id targeting.
 - **Device red dots**: `PowerManager.isIgnoringBatteryOptimizations` is faked to true (equivalent to "battery optimization ignored") plus face-entrance red-dot getters return false, which removes the bottom-nav "Device" tab dot and the home "System settings" entry dot.
 - **Sport anchor strategy**: everything below the "training index" anchor is removed as a whole, and page scrolling is disabled.
+- **Watchface auto-export (experimental)**: after a trial download, the cached `resource.bin` is re-ID'd (`12→19` prefix swap, same length) and written to `Download/` under its Chinese name for third-party import; exported IDs are filtered out of the server-side cleanup list so sideloaded faces survive sync; exported cache older than 5 minutes is auto-removed; every scan reports via Toast/notification.
 
 ## Requirements
 

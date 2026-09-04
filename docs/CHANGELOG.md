@@ -1,5 +1,31 @@
 # Changelog 更新日志
 
+## v1.0.3 (versionCode 23)
+
+> 双语更新日志 | Bilingual changelog
+
+### New: Trial watchface auto-export / 新增：试用表盘自动导出
+After a trial download, the cached `resource.bin` is re-ID'd (`12→19` prefix swap, same length) and written to `Download/` under its Chinese face name, ready for third-party import (verified with AstroBox on Xiaomi Smart Band 10 Pro). Every scan reports via Toast/notification.
+- 新增试用下载后自动导出：缓存的 `resource.bin` 按"12→19"规则换新 ID（等长），以表盘中文名写入 `Download/`，供第三方软件导入（已在小米手环 10 Pro + AstroBox 真机验证）；每次扫描经 Toast/通知告知结果。
+
+### New: Cleanup protection / 新增：防删除保护
+Exported IDs (19-prefix range) are filtered out of the server-side unavailable-face cleanup list, so sideloaded faces survive app sync instead of being removed.
+- 新增导出 ID（19 号段）从服务端清理名单中摘除，第三方刷入的表盘同步不再被删。
+
+### New: Exported cache auto-cleanup / 新增：已导出缓存自动清理
+Exported `resource.bin` files older than 5 minutes are auto-removed (descriptions/previews kept, app UI unaffected); a 15-minute push guard prevents deleting a file mid-transfer.
+- 新增已导出缓存自动清理：超 5 分钟的 `resource.bin` 自动删除（描述/预览保留）；15 分钟内有过推送则整单跳过，防删正在传的文件。
+
+### New: Settings toggle / 新增：设置开关
+One new toggle in the settings UI, 15 → 16 (default off): "Watchface auto-export (experimental)".
+- 设置界面新增 1 个开关（默认关闭），15 → 16 个：「表盘自动导出（实验）」。
+
+### Code / 其他
+- All existing ad-removal features unchanged.
+- 原有去广告功能保持不变。
+
+---
+
 ## v1.0.2 (versionCode 22)
 
 > 双语更新日志 | Bilingual changelog

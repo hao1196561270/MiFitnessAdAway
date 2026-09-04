@@ -20,6 +20,7 @@ public final class Prefs {
     public static final String KEY_ENABLE_HEALTH_CONSULT = "enable_health_consult";
     public static final String KEY_ENABLE_SLEEP_CARDS = "enable_sleep_cards";
     public static final String KEY_ENABLE_DEVICE_RED_DOT = "enable_device_red_dot";
+    public static final String KEY_ENABLE_FACE_EXPORT = "enable_face_export";
     public static final String KEY_ENABLE_SPLASH = "enable_splash";
     public static final String KEY_ENABLE_ANNOUNCE = "enable_announce";
     public static final String KEY_ENABLE_ANTI_DETECT = "enable_anti_detect";
@@ -31,6 +32,11 @@ public final class Prefs {
 
     public static boolean isEnabled(SharedPreferences p, String key) {
         return p.getBoolean(key, true);
+    }
+
+    /** 带默认值的读取（用于默认关闭的实验性开关） */
+    public static boolean isEnabled(SharedPreferences p, String key, boolean def) {
+        return p.getBoolean(key, def);
     }
 
     /** hook 侧读取：总开关前提下逐项生效 */

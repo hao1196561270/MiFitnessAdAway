@@ -104,6 +104,7 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
         addSwitch(root, "设备红点（底部tab/系统设置入口）", Prefs.KEY_ENABLE_DEVICE_RED_DOT);
         addSwitch(root, "我的界面 VIP 会员卡", Prefs.KEY_ENABLE_MINE_VIP);
         addSwitch(root, "我的界面健康问诊卡", Prefs.KEY_ENABLE_MINE_DOCTOR);
+        addSwitch(root, "表盘自动导出（实验）", Prefs.KEY_ENABLE_FACE_EXPORT);
         addSwitch(root, "运动界面轮播卡片", Prefs.KEY_ENABLE_SPORT_BANNER);
         addSwitch(root, "运动界面运营卡片（训练指标以下）", Prefs.KEY_ENABLE_SPORT_CARDS);
         addSwitch(root, "健康问诊卡片（睡眠/心率/血氧）", Prefs.KEY_ENABLE_HEALTH_CONSULT);
@@ -215,6 +216,9 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
                     if (Prefs.KEY_HIDE_ICON.equals(e.getKey())) {
                         // 开关语义=「隐藏图标」：图标显示(TRUE)时开关应 OFF
                         e.getValue().setChecked(!isLauncherIconEnabled());
+                    } else if (Prefs.KEY_ENABLE_FACE_EXPORT.equals(e.getKey())) {
+                        // 实验开关默认关闭
+                        e.getValue().setChecked(sp.getBoolean(e.getKey(), false));
                     } else {
                         e.getValue().setChecked(sp.getBoolean(e.getKey(), true));
                     }

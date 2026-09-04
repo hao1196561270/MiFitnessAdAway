@@ -98,6 +98,10 @@ public class AdAwayModule extends XposedModule {
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_DEVICE_RED_DOT)) {
             hookDeviceRedDots(cl);
         }
+        // 表盘自动导出：推送前把 resource.bin 换新 ID 写一份到 Download/（实验开关门控）
+        if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_FACE_EXPORT)) {
+            hookFaceExport(cl);
+        }
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ANTI_DETECT)) {
             hookSensorHelper(cl);
         }
@@ -388,6 +392,8 @@ public class AdAwayModule extends XposedModule {
                 if (root != null) {
                     scheduleViewScan(root, 0);
                 }
+                // 表盘导出备份触发：开"我的"页即扫一次缓存（schedule 内自带开关门控）
+                scheduleExportScan();
                 return result;
             });
             log(Log.INFO, TAG, "hooked: MineFragmentV4.onViewCreated (view scan)");
@@ -1102,6 +1108,693 @@ public class AdAwayModule extends XposedModule {
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "hook failed: PowerManager.isIgnoringBatteryOptimizations", t);
         }
+    }
+
+    // ===================== 表盘自动导出（实验） =====================
+
+    /** 表盘自动导出是否开启（独立开关，默认关；要求总开关同时开启） */
+    private boolean faceExport() {
+        return Prefs.isEnabled(mPrefs, Prefs.KEY_ENABLE_ALL)
+                && Prefs.isEnabled(mPrefs, Prefs.KEY_ENABLE_FACE_EXPORT, false);
+    }
+
+    /** 本进程已导出的新 ID（同进程去重） */
+    private final java.util.Set<String> exportedFaces = new java.util.HashSet<>();
+
+    /** 最近一次推送发起时间（ms），清理时 15 分钟内有推送则跳过 */
+    private volatile long mLastPushMillis;
+
+    /**
+     * 表盘自动导出：hook 表盘推送入口 doInstall(path, id, ...)，推送前把
+     * resource.bin 按"12→19"规则换新 ID，原样写一份到 Download/face_<新ID>.bin（中文名_新ID.bin），
+     * 供第三方软件直接导入。只改 ID（已验证 band 接受），不动其他字节。
+     * 导出失败只记日志，绝不影响原推送流程。
+     */
+    /** 自定义 ID 前缀（导出时 12→19），清理保护只保这个号段 */
+    private static final String CUSTOM_FACE_PREFIX = "19";
+
+    private void hookFaceExport(ClassLoader cl) throws Throwable {
+        hookFaceCleanupProtect(cl);
+        String[] impls = new String[]{
+                "com.xiaomi.fitness.watch.face.install.FaceInstallBleImpl",
+                "com.xiaomi.fitness.watch.face.install.FaceInstallHuamiImpl"};
+        for (String clsName : impls) {
+            try {
+                Class<?> clazz = Class.forName(clsName, true, cl);
+                Class<?> cb = Class.forName(
+                        "com.xiaomi.fitness.watch.face.install.FaceInstallPushCallback", true, cl);
+                java.lang.reflect.Method m = resolveDoInstall(clazz, cb);
+                if (m == null) {
+                    log(Log.ERROR, TAG, "hook failed: " + clsName + ".doInstall (no match)");
+                    continue;
+                }
+                m.setAccessible(true);
+                hook(m).intercept(chain -> {
+                    try {
+                        if (faceExport()) {
+                            mLastPushMillis = System.currentTimeMillis();
+                            exportCachedFaces();
+                            scheduleExportScan();
+                        }
+                    } catch (Throwable t) {
+                        log(Log.ERROR, TAG, "face export failed (non-fatal)", t);
+                    }
+                    return chain.proceed();
+                });
+                log(Log.INFO, TAG, "hooked: " + clsName + ".doInstall (face export)");
+            } catch (Throwable t) {
+                log(Log.ERROR, TAG, "hook failed: " + clsName + ".doInstall", t);
+            }
+        }
+        // preInstall 兜底：部分推送链路不经过 doInstall（如版本漂移），在预安装点也试一次
+        for (String clsName : impls) {
+            try {
+                Class<?> clazz = Class.forName(clsName, true, cl);
+                java.lang.reflect.Method m = resolvePreInstall(clazz);
+                if (m == null) {
+                    log(Log.ERROR, TAG, "hook failed: " + clsName + ".preInstall (no match)");
+                    continue;
+                }
+                m.setAccessible(true);
+                hook(m).intercept(chain -> {
+                    try {
+                        if (faceExport()) {
+                            mLastPushMillis = System.currentTimeMillis();
+                            exportCachedFaces();
+                            scheduleExportScan();
+                        }
+                    } catch (Throwable t) {
+                        log(Log.ERROR, TAG, "face export failed (non-fatal)", t);
+                    }
+                    return chain.proceed();
+                });
+                log(Log.INFO, TAG, "hooked: " + clsName + ".preInstall (face export)");
+            } catch (Throwable t) {
+                log(Log.ERROR, TAG, "hook failed: " + clsName + ".preInstall", t);
+            }
+        }
+    }
+
+    /**
+     * 解析 preInstall(String, String, long, long, boolean, String, String,
+     * Integer, Function3)：前 8 精确，末参按名宽松（含 unction3 即可，
+     * kotlin-stdlib 混淆导致精确匹配不可靠，见试用转正期的真机实证）。
+     */
+    private java.lang.reflect.Method resolvePreInstall(Class<?> clazz) {
+        Class<?>[] leading = new Class[]{String.class, String.class, long.class, long.class,
+                boolean.class, String.class, String.class, Integer.class};
+        for (java.lang.reflect.Method cand : clazz.getDeclaredMethods()) {
+            if (!"preInstall".equals(cand.getName())) {
+                continue;
+            }
+            Class<?>[] ps = cand.getParameterTypes();
+            if (ps.length != 9) {
+                continue;
+            }
+            boolean ok = true;
+            for (int i = 0; i < leading.length; i++) {
+                if (ps[i] != leading[i]) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (!ok) {
+                continue;
+            }
+            if (ps[8].getName().contains("unction3")) {
+                log(Log.INFO, TAG, "resolved: " + clazz.getSimpleName() + ".preInstall");
+                return cand;
+            }
+        }
+        return null;
+    }
+
+    /** 解析 doInstall(String, String, Integer, FaceInstallPushCallback)：精确优先，名+元数回退 */
+    private java.lang.reflect.Method resolveDoInstall(Class<?> clazz, Class<?> cb) {
+        try {
+            return clazz.getDeclaredMethod("doInstall", String.class, String.class,
+                    Integer.class, cb);
+        } catch (NoSuchMethodException e) {
+            // fall through
+        }
+        for (java.lang.reflect.Method cand : clazz.getDeclaredMethods()) {
+            if ("doInstall".equals(cand.getName())
+                    && cand.getParameterTypes().length == 4) {
+                log(Log.INFO, TAG, "resolved: " + clazz.getSimpleName() + ".doInstall");
+                return cand;
+            }
+        }
+        return null;
+    }
+
+    /** 新 ID 规则：12 位数字 ID 前缀 12→19（等长替换，结构不断） */
+    private String remapFaceId(String faceId) {
+        if (faceId != null && faceId.length() == 12) {
+            return CUSTOM_FACE_PREFIX + faceId.substring(2);
+        }
+        return null;
+    }
+
+    /**
+     * 防删除保护：App 每次同步拿服务端 unavailable 名单删本地未知 ID 的表盘
+     * （第三方软件刷入的 19 号段必中招）。把 19 号段从名单摘掉，名单空了直接跳过；
+     * 只动名单，不动删除逻辑本身。本地 DB 的 deleteOtherWatchFace 后续看情况再保。
+     */
+    private void hookFaceCleanupProtect(ClassLoader cl) throws Throwable {
+        try {
+            Class<?> clazz = Class.forName(
+                    "com.xiaomi.fitness.watch.face.export.FaceHelperImpl", true, cl);
+            hookCleanupMethod(clazz, "removeUnavailableFaces",
+                    new Class[]{java.util.List.class, java.util.List.class, java.util.List.class});
+            hookCleanupMethod(clazz, "removeUnavailableFacesByGroup",
+                    new Class[]{java.util.List.class, int.class});
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "hook failed: cleanup protect", t);
+        }
+    }
+
+    private void hookCleanupMethod(Class<?> clazz, String name, Class<?>[] params) throws Throwable {
+        java.lang.reflect.Method m = clazz.getDeclaredMethod(name, params);
+        m.setAccessible(true);
+        final boolean withGroup = params.length == 2;
+        hook(m).intercept(chain -> {
+            if (!faceExport()) {
+                return chain.proceed();
+            }
+            java.util.List<String> ids = (java.util.List<String>) chain.getArg(0);
+            java.util.List<String> kept = filterCustomFaces(ids);
+            if (kept.isEmpty()) {
+                log(Log.INFO, TAG, "cleanup protect: all skipped (" + name + ")");
+                return null;
+            }
+            if (ids == null || kept.size() != ids.size()) {
+                log(Log.INFO, TAG, "cleanup protect: filtered=" + kept);
+                if (withGroup) {
+                    return chain.proceed(new Object[]{kept, chain.getArg(1)});
+                }
+                return chain.proceed(new Object[]{kept, chain.getArg(1), chain.getArg(2)});
+            }
+            return chain.proceed();
+        });
+        log(Log.INFO, TAG, "hooked: FaceHelperImpl." + name + " (cleanup protect)");
+    }
+
+    /** 摘掉 19 号段自定义 ID，返回保留名单 */
+    private java.util.List<String> filterCustomFaces(java.util.List<String> ids) {
+        java.util.List<String> kept = new java.util.ArrayList<>();
+        if (ids == null) {
+            return kept;
+        }
+        for (String id : ids) {
+            if (id != null && id.length() == 12 && id.startsWith(CUSTOM_FACE_PREFIX)) {
+                log(Log.INFO, TAG, "cleanup protect: keep " + id);
+                continue;
+            }
+            kept.add(id);
+        }
+        return kept;
+    }
+
+    /**
+     * 全量扫描导出：遍历 WatchFace 缓存目录，把所有未导出的 resource.bin
+     * 换新 ID 写到 Download/。推送拦截 + 页面打开双触发，互为备份
+     * （推送链路版本漂移时，扫盘依然能兜住）。
+     */
+    private void exportCachedFaces() {
+        if (!faceExport()) {
+            return;
+        }
+        try {
+            java.io.File root = new java.io.File(
+                    "/storage/emulated/0/Android/data/com.mi.health/files/WatchFace");
+            java.io.File[] dids = root.listFiles();
+            if (dids == null) {
+                return;
+            }
+            int found = 0;
+            int fresh = 0;
+            int cleaned = 0;
+            for (java.io.File did : dids) {
+                if (!did.isDirectory()) {
+                    continue;
+                }
+                java.io.File[] faces = did.listFiles();
+                if (faces == null) {
+                    continue;
+                }
+                for (java.io.File face : faces) {
+                    if (!face.isDirectory()) {
+                        continue;
+                    }
+                    found++;
+                    if (exportFace(null, face.getName())) {
+                        fresh++;
+                    } else if (cleanOldBin(face)) {
+                        cleaned++;
+                    }
+                }
+            }
+            log(Log.INFO, TAG, "export scan done: fresh=" + fresh + " found=" + found
+                    + " cleaned=" + cleaned);
+            notifyExportResult(fresh, found, cleaned);
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "export scan error", t);
+        }
+    }
+
+    /** 已导出 ID 的跨进程记录（RemotePreferences，MediaStore 查询不可靠） */
+    private static final String PREF_EXPORTED_IDS = "exported_face_ids";
+
+    private boolean isExportedMarked(String newId) {
+        try {
+            if (mPrefs == null || newId == null) {
+                return false;
+            }
+            String csv = mPrefs.getString(PREF_EXPORTED_IDS, "");
+            if (csv == null || csv.isEmpty()) {
+                return false;
+            }
+            for (String s : csv.split(",")) {
+                if (newId.equals(s)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "read exported marks failed", t);
+            return false;
+        }
+    }
+
+    private void markExported(String newId) {
+        try {
+            if (mPrefs == null || newId == null) {
+                return;
+            }
+            String csv = mPrefs.getString(PREF_EXPORTED_IDS, "");
+            if (csv == null) {
+                csv = "";
+            }
+            if (!csv.isEmpty()) {
+                for (String s : csv.split(",")) {
+                    if (newId.equals(s)) {
+                        return;
+                    }
+                }
+            }
+            mPrefs.edit().putString(PREF_EXPORTED_IDS,
+                    csv.isEmpty() ? newId : csv + "," + newId).apply();
+            log(Log.INFO, TAG, "marked exported: " + newId);
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "mark exported failed", t);
+        }
+    }
+
+    /**
+     * 清旧缓存：已导出超过 5 分钟的 resource.bin 删除（只删大文件，描述/预览保留，
+     * App 显示不受影响；叠加 15 分钟推送保护，防删正在传的文件）。
+     */
+    private boolean cleanOldBin(java.io.File faceDir) {
+        try {
+            if (faceDir == null || !faceDir.isDirectory()) {
+                return false;
+            }
+            String newId = remapFaceId(faceDir.getName());
+            if (newId == null || !isExportedMarked(newId)) {
+                return false;
+            }
+            java.io.File[] hashes = faceDir.listFiles();
+            if (hashes == null) {
+                return false;
+            }
+            boolean cleaned = false;
+            long now = System.currentTimeMillis();
+            // 15 分钟内有过推送则整单跳过（防删正在传的文件）
+            if (now - mLastPushMillis < 15L * 60 * 1000) {
+                return false;
+            }
+            long cutoff = now - 5L * 60 * 1000;
+            for (java.io.File h : hashes) {
+                java.io.File bin = new java.io.File(h, "resource.bin");
+                if (bin.isFile() && bin.lastModified() < cutoff && bin.delete()) {
+                    log(Log.INFO, TAG, "cache cleaned: " + bin.getAbsolutePath());
+                    cleaned = true;
+                }
+            }
+            return cleaned;
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "cache clean error", t);
+            return false;
+        }
+    }
+
+    /** 扫盘结果通知：告诉用户新增几张、清了几个、去哪找、下一步干嘛 */
+    private void notifyExportResult(int fresh, int found, int cleaned) {
+        try {
+            String title;
+            String text;
+            String tail = cleaned > 0 ? "；顺手清了 " + cleaned + " 个旧缓存" : "";
+            if (fresh > 0) {
+                title = "表盘导出成功";
+                text = "新增 " + fresh + " 张 → Download/，去第三方软件导入开刷" + tail;
+            } else {
+                title = "表盘导出";
+                text = "无新增（缓存 " + found + " 张均已导出），试用新表盘后再来" + tail;
+            }
+            notifyExport(title, text);
+            toastResult(text);
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "notify failed", t);
+        }
+    }
+
+    /** Toast 兜底：通知栏权限被关时也能看到（小米运动健康的通知权限当前是关的） */
+    private void toastResult(final String text) {
+        try {
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Object app = Class.forName("android.app.ActivityThread")
+                                .getMethod("currentApplication").invoke(null);
+                        android.widget.Toast.makeText((android.content.Context) app,
+                                text, android.widget.Toast.LENGTH_LONG).show();
+                    } catch (Throwable t) {
+                        log(Log.ERROR, TAG, "toast failed", t);
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "toast failed", t);
+        }
+    }
+
+    private void notifyExport(String title, String text) {
+        try {
+            Object app = Class.forName("android.app.ActivityThread")
+                    .getMethod("currentApplication").invoke(null);
+            android.content.Context ctx = (android.content.Context) app;
+            Object nmObj = ctx.getSystemService(android.content.Context.NOTIFICATION_SERVICE);
+            android.app.NotificationManager nm = (android.app.NotificationManager) nmObj;
+            String ch = "face_export";
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                android.app.NotificationChannel c = new android.app.NotificationChannel(
+                        ch, "表盘导出", android.app.NotificationManager.IMPORTANCE_DEFAULT);
+                nm.createNotificationChannel(c);
+            }
+            android.app.Notification.Builder b;
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                b = new android.app.Notification.Builder(ctx, ch);
+            } else {
+                b = new android.app.Notification.Builder(ctx);
+            }
+            b.setContentTitle(title).setContentText(text)
+                    .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                    .setAutoCancel(true);
+            nm.notify(0xface, b.build());
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "notify failed", t);
+        }
+    }
+
+    /** 延迟 5 秒再扫一次（等下载/解包落盘） */
+    private void scheduleExportScan() {
+        if (!faceExport()) {
+            return;
+        }
+        try {
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        exportCachedFaces();
+                    } catch (Throwable t) {
+                        log(Log.ERROR, TAG, "export scan error", t);
+                    }
+                }
+            }, 5000);
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "export schedule error", t);
+        }
+    }
+
+    /**
+     * 导出流程：找 resource.bin → 内存换 ID → 写 Download/face_<新ID>.bin。
+     * path 非常规时回退按 faceId 在 WatchFace 缓存目录下搜 resource.bin。
+     */
+    private boolean exportFace(String path, String faceId) {
+        String newId = remapFaceId(faceId);
+        if (newId == null) {
+            return false; // 非 12 位 ID 直接跳过（不记 error，避免扫盘刷屏）
+        }
+        synchronized (exportedFaces) {
+            if (exportedFaces.contains(newId)) {
+                markExported(newId);
+                return false; // 同一张盘只导一次
+            }
+            exportedFaces.add(newId);
+        }
+        if (isExportedMarked(newId)) {
+            return false; // 跨进程去重（MediaStore 查询不可靠，改走 prefs 记录）
+        }
+        java.io.File src = findFaceBin(path, faceId);
+        if (src == null) {
+            log(Log.ERROR, TAG, "face export skip: bin not found id=" + faceId);
+            return false;
+        }
+        try {
+            byte[] data = readAll(src);
+            byte[] oldB;
+            byte[] newB;
+            try {
+                oldB = faceId.getBytes("ASCII");
+                newB = newId.getBytes("ASCII");
+            } catch (Throwable t) {
+                oldB = faceId.getBytes();
+                newB = newId.getBytes();
+            }
+            int replaced = replaceAll(data, oldB, newB);
+            if (replaced == 0) {
+                log(Log.ERROR, TAG, "face export skip: id not in bin");
+                return false;
+            }
+            String faceName = readFaceName(src);
+            String fileName = (faceName != null ? faceName + "_" + newId : "face_" + newId) + ".bin";
+            Object uri = writeToDownload(fileName, data);
+            if (uri == null) {
+                markExported(newId);
+                return false; // 已存在（跨进程去重）
+            }
+            markExported(newId);
+            log(Log.INFO, TAG, "face exported: " + faceId + " -> " + newId
+                    + " (" + replaced + "x, " + data.length + "B) -> " + uri);
+            return true;
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "face export error", t);
+            return false;
+        }
+    }
+
+    /** 从同目录 description.xml 读表盘中文名（供导出文件名用，失败返回 null） */
+    private String readFaceName(java.io.File bin) {
+        try {
+            java.io.File parent = bin.getParentFile();
+            if (parent == null) {
+                return null;
+            }
+            java.io.File xml = new java.io.File(parent, "description.xml");
+            if (!xml.isFile() || xml.length() <= 0 || xml.length() > 65536) {
+                return null;
+            }
+            byte[] buf = readAll(xml);
+            String s = new String(buf, "UTF-8");
+            int a = s.indexOf("<name>");
+            if (a < 0) {
+                return null;
+            }
+            int b = s.indexOf("</name>", a);
+            if (b < 0) {
+                return null;
+            }
+            String name = s.substring(a + 6, b).trim();
+            if (name.isEmpty()) {
+                return null;
+            }
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < name.length(); i++) {
+                char ch = name.charAt(i);
+                if (ch == '/' || ch == '\\' || ch == ':' || ch == '*' || ch == '?'
+                        || ch == '"' || ch == '<' || ch == '>' || ch == '|') {
+                    sb.append('_');
+                } else {
+                    sb.append(ch);
+                }
+            }
+            String clean = sb.toString().trim();
+            return clean.isEmpty() ? null : clean;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 定位 resource.bin：优先 doInstall 传的 path，否则按 faceId 搜缓存目录 */
+    private java.io.File findFaceBin(String path, String faceId) {
+        if (path != null) {
+            java.io.File f = new java.io.File(path);
+            if (f.isFile() && f.length() > 0) {
+                return f;
+            }
+        }
+        try {
+            java.io.File root = new java.io.File(
+                    "/storage/emulated/0/Android/data/com.mi.health/files/WatchFace");
+            return searchBin(root, faceId, 0);
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "face bin search error", t);
+            return null;
+        }
+    }
+
+    private java.io.File searchBin(java.io.File dir, String faceId, int depth) {
+        if (dir == null || depth > 4 || !dir.isDirectory()) {
+            return null;
+        }
+        java.io.File[] kids = dir.listFiles();
+        if (kids == null) {
+            return null;
+        }
+        for (java.io.File k : kids) {
+            if (k.isFile() && "resource.bin".equals(k.getName())
+                    && k.getAbsolutePath().contains(faceId)) {
+                return k;
+            }
+        }
+        for (java.io.File k : kids) {
+            java.io.File hit = searchBin(k, faceId, depth + 1);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private byte[] readAll(java.io.File f) throws Throwable {
+        java.io.FileInputStream in = new java.io.FileInputStream(f);
+        try {
+            long len = f.length();
+            if (len <= 0 || len > 64 * 1024 * 1024) {
+                throw new RuntimeException("bad size: " + len);
+            }
+            byte[] buf = new byte[(int) len];
+            int off = 0;
+            while (off < buf.length) {
+                int n = in.read(buf, off, buf.length - off);
+                if (n < 0) {
+                    break;
+                }
+                off += n;
+            }
+            if (off != buf.length) {
+                throw new RuntimeException("short read");
+            }
+            return buf;
+        } finally {
+            try {
+                in.close();
+            } catch (Throwable ignored) {
+                // ignore
+            }
+        }
+    }
+
+    private int replaceAll(byte[] data, byte[] oldB, byte[] newB) {
+        int count = 0;
+        outer:
+        for (int i = 0; i + oldB.length <= data.length; i++) {
+            for (int j = 0; j < oldB.length; j++) {
+                if (data[i + j] != oldB[j]) {
+                    continue outer;
+                }
+            }
+            System.arraycopy(newB, 0, data, i, newB.length);
+            count++;
+            i += oldB.length - 1;
+        }
+        return count;
+    }
+
+    /**
+     * 写 Download/：API29+ 走 MediaStore（免权限写自有文件），
+     * 低版本回退直接写 Download 目录；同名已存在则跳过（跨进程去重）。
+     */
+    private Object writeToDownload(String fileName, byte[] data) throws Throwable {
+        Object app = Class.forName("android.app.ActivityThread")
+                .getMethod("currentApplication").invoke(null);
+        android.content.Context ctx = (android.content.Context) app;
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            android.content.ContentResolver cr = ctx.getContentResolver();
+            android.net.Uri coll = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+            android.database.Cursor c = null;
+            try {
+                c = cr.query(coll, new String[]{"_id"},
+                        "_display_name=?", new String[]{fileName}, null);
+                if (c != null && c.moveToFirst()) {
+                    log(Log.INFO, TAG, "face export skip: already in Download");
+                    return null;
+                }
+            } finally {
+                if (c != null) {
+                    try {
+                        c.close();
+                    } catch (Throwable ignored) {
+                        // ignore
+                    }
+                }
+            }
+            android.content.ContentValues cv = new android.content.ContentValues();
+            cv.put("_display_name", fileName);
+            cv.put("mime_type", "application/octet-stream");
+            cv.put("relative_path", "Download");
+            android.net.Uri uri = cr.insert(coll, cv);
+            if (uri == null) {
+                throw new RuntimeException("mediastore insert null");
+            }
+            java.io.OutputStream out = null;
+            try {
+                out = cr.openOutputStream(uri);
+                if (out == null) {
+                    throw new RuntimeException("open stream null");
+                }
+                out.write(data);
+            } finally {
+                if (out != null) {
+                    try {
+                        out.close();
+                    } catch (Throwable ignored) {
+                        // ignore
+                    }
+                }
+            }
+            return uri;
+        }
+        java.io.File dir = android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS);
+        java.io.File out = new java.io.File(dir, fileName);
+        if (out.isFile()) {
+            log(Log.INFO, TAG, "face export skip: already in Download");
+            return null;
+        }
+        java.io.FileOutputStream fos = new java.io.FileOutputStream(out);
+        try {
+            fos.write(data);
+        } finally {
+            try {
+                fos.close();
+            } catch (Throwable ignored) {
+                // ignore
+            }
+        }
+        return out.getAbsolutePath();
     }
 
     // ===================== 反 hook 检测 =====================
