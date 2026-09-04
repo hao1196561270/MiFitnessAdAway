@@ -2,27 +2,39 @@
 
 ## v1.0.3 (versionCode 23)
 
-> 双语更新日志 | Bilingual changelog
+### English
 
-### New: Trial watchface auto-export / 新增：试用表盘自动导出
+**New: Trial watchface auto-export**
 After a trial download finishes, the cached `resource.bin` is automatically re-ID'd (`12→19` prefix swap, same length) and written to `Download/` under its Chinese face name (e.g. `蜘蛛侠超感大眼_190917425583.bin`), ready for third-party import (verified with AstroBox on Xiaomi Smart Band 10 Pro). Every scan reports via Toast/notification; already-exported faces are never exported twice.
-- 新增试用下载后自动导出：缓存的 `resource.bin` 按"12→19"规则换新 ID（等长），以表盘中文名写入 `Download/`（如 `蜘蛛侠超感大眼_190917425583.bin`），供第三方软件导入（已在小米手环 10 Pro + AstroBox 真机验证）；每次扫描经 Toast/通知告知结果，已导出的不再重复导出。
 
-### New: Cleanup protection / 新增：防删除保护
+**New: Cleanup protection**
 Exported IDs (19-prefix range) are filtered out of the server-side unavailable-face cleanup list before deletion runs; if the list becomes empty the cleanup is skipped entirely, so sideloaded faces survive app sync instead of being removed. Normal cleanup for other faces is untouched.
-- 新增导出 ID（19 号段）在删除前从服务端清理名单中摘除，名单空了整单跳过，第三方刷入的表盘同步不再被删；其他表盘的正常清理不受影响。
 
-### New: Exported cache auto-cleanup / 新增：已导出缓存自动清理
+**New: Exported cache auto-cleanup**
 Exported `resource.bin` files older than 5 minutes are auto-removed (descriptions/previews kept, app UI unaffected); if any push happened within the last 15 minutes the whole cleanup is skipped to never delete a file mid-transfer.
-- 新增已导出缓存自动清理：超 5 分钟的 `resource.bin` 自动删除（描述/预览保留，App 显示不受影响）；15 分钟内有过推送则整单跳过，防删正在传的文件。
 
-### New: Settings toggle / 新增：设置开关
+**New: Settings toggle**
 One new toggle in the settings UI, 15 → 16 (default off): "Watchface auto-export (experimental)".
-- 设置界面新增 1 个开关（默认关闭），15 → 16 个：「表盘自动导出（实验）」。
 
-### Code / 其他
-- All existing ad-removal features unchanged.
-- 原有去广告功能保持不变。
+**Code**
+All existing ad-removal features unchanged.
+
+### 中文
+
+**新增：试用表盘自动导出**
+试用下载完成后，缓存的 `resource.bin` 自动按"12→19"规则换新 ID（等长），以表盘中文名写入 `Download/`（如 `蜘蛛侠超感大眼_190917425583.bin`），供第三方软件导入（已在小米手环 10 Pro + AstroBox 真机验证）；每次扫描经 Toast/通知告知结果，已导出的不再重复导出。
+
+**新增：防删除保护**
+导出 ID（19 号段）在删除前从服务端清理名单中摘除，名单空了整单跳过，第三方刷入的表盘同步不再被删；其他表盘的正常清理不受影响。
+
+**新增：已导出缓存自动清理**
+超 5 分钟的已导出 `resource.bin` 自动删除（描述/预览保留，App 显示不受影响）；15 分钟内有过推送则整单跳过，防删正在传的文件。
+
+**新增：设置开关**
+设置界面新增 1 个开关（默认关闭），15 → 16 个：「表盘自动导出（实验）」。
+
+**其他**
+原有去广告功能保持不变。
 
 ---
 
