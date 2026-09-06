@@ -197,6 +197,10 @@ public class AdAwayModule extends XposedModule {
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_ANTI_DETECT)) {
             hookSensorHelper(cl);
         }
+        // 应用更新弹窗：「发现 App 新版本」CommonDialog（guide_upgrade）
+        if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_APP_UPDATE)) {
+            hookAppUpdateDialog(cl);
+        }
     }
 
     // ===================== banner 数据 getter（总开关） =====================
@@ -1787,6 +1791,35 @@ public class AdAwayModule extends XposedModule {
                     });
                 });
             }
+        });
+    }
+
+    // ===================== 应用更新弹窗 =====================
+
+    /**
+     * 去除「发现 App 新版本」更新弹窗：
+     * AppUpgradeUtil.doCheckAppUpgrade 查到新版后走 showUpdateDialogIfNeed()
+     * 弹出 CommonDialog（tag=guide_upgrade，暂不/下载并更新）。
+     * 在此直接跳过（后台检查照常跑，hasNewVersion 照常置位；“我的”页手动
+     * 检查更新走 goToAppUpgradeActivity，不经此弹窗，不受影响）。
+     * 签名全是非混淆类，可精确匹配。
+     */
+    private void hookAppUpdateDialog(ClassLoader cl) throws Throwable {
+        tryHook("AppUpgradeUtil.showUpdateDialogIfNeed (app update dialog)", () -> {
+            Class<?> clazz = Class.forName("com.mi.health.appupgrade.AppUpgradeUtil", true, cl);
+            Class<?> fm = Class.forName("androidx.fragment.app.FragmentManager", true, cl);
+            Class<?> result = Class.forName("com.mi.health.appupgrade.model.AppUpgradeResult", true, cl);
+            Method m = clazz.getDeclaredMethod("showUpdateDialogIfNeed", fm, result, boolean.class);
+            m.setAccessible(true);
+            hook(m).intercept(chain -> {
+                if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_APP_UPDATE)) {
+                    return chain.proceed();
+                }
+                if (debugLog()) {
+                    log(Log.INFO, TAG, "app update dialog blocked");
+                }
+                return null;
+            });
         });
     }
 }

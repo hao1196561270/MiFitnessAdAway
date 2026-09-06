@@ -113,6 +113,7 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
         addSwitch(root, "睡眠界面研究/改善卡片", Prefs.KEY_ENABLE_SLEEP_CARDS);
         addSwitch(root, "开屏广告", Prefs.KEY_ENABLE_SPLASH);
         addSwitch(root, "公告 banner", Prefs.KEY_ENABLE_ANNOUNCE);
+        addSwitch(root, "应用更新弹窗", Prefs.KEY_ENABLE_APP_UPDATE);
         addSwitch(root, "反 hook 检测", Prefs.KEY_ENABLE_ANTI_DETECT);
         addSwitch(root, "调试日志", Prefs.KEY_DEBUG_LOG);
         addSwitch(root, "隐藏桌面图标", Prefs.KEY_HIDE_ICON);

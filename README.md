@@ -2,9 +2,9 @@
 
 English | [中文](README_zh.md)
 
-Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.58.0), built as a modern **libxposed API 102** LSPosed module (requires LSPosed ≥ v2.1.1 / KernelSU).
+Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.0+), built as a modern **libxposed API 102** LSPosed module (requires LSPosed ≥ v2.1.1 / KernelSU).
 
-> **v1.0.5 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
+> **v1.0.6 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
 
 ## Features
 
@@ -23,11 +23,12 @@ Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.58.
 | "AntBoy AI" interpretation card (top of Sleep / Heart rate pages) | ✅ |
 | Sleep page research / improvement cards (sleep-breathing-apnea research, sleep-health research, 21-day improvement plan) | ✅ |
 | Trial watchface auto-export (re-ID'd → Download/, third-party import) + cleanup protection | ✅ (experimental) |
+| App update dialog ("Update available" prompt) | ✅ |
 
-The module app ships with a **settings UI** with 16 toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
+The module app ships with a **settings UI** with 17 toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
 
 - Master (enable ad-removal)
-- Home / device / mine VIP / mine doctor / sport carousel / sport operation / splash / announcement toggles
+- Home / device / mine VIP / mine doctor / sport carousel / sport operation / splash / announcement / app-update-dialog toggles
 - Health consultation card (Sleep / Heart rate / SpO₂ pages)
 - Sleep research / improvement cards
 - Device red dots (bottom nav + system settings entry)
@@ -47,10 +48,12 @@ The settings UI follows the system dark/light theme.
 - **Sport anchor strategy**: everything below the "training index" anchor is removed as a whole, and page scrolling is disabled.
 - **Watchface auto-export (experimental)**: after a trial download, the cached `resource.bin` is re-ID'd (`12→19` prefix swap, same length) and written to `Download/` under its Chinese name for third-party import; exported IDs are filtered out of the server-side cleanup list so sideloaded faces survive sync; exported cache is removed whole-directory on the next scan (snapshot-based, with handoff/push guards); every scan reports via Toast/notification.
 
+- **App update dialog**: `AppUpgradeUtil.showUpdateDialogIfNeed` is skipped, so the "Update available" popup never shows (background version check still runs; manual update check on the Mine page is unaffected).
+
 ## Requirements
 
 - LSPosed ≥ 2.1.1 (Zygisk) / KernelSU
-- `com.mi.health` 3.58.0 (hook points may differ on other versions)
+- `com.mi.health` 3.0+ (every hook installs independently — entry points missing on a version are skipped gracefully, the rest keep working)
 
 ## Build
 

@@ -1,8 +1,8 @@
 # MiFitnessAdAway
 
-Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.58.0). A modern LSPosed module built with libxposed API 102.
+Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.0+). A modern LSPosed module built with libxposed API 102.
 
-Remove ads from 小米运动健康 (`com.mi.health` 3.58.0) - 现代 libxposed API 102 模块。
+Remove ads from 小米运动健康 (`com.mi.health` 3.0+) - 现代 libxposed API 102 模块。
 
 ## What it removes / 移除内容
 
@@ -15,14 +15,15 @@ Remove ads from 小米运动健康 (`com.mi.health` 3.58.0) - 现代 libxposed A
 - Health detail pages consultation cards (Sleep / Heart rate / SpO₂) / 健康详情页问诊卡片（睡眠 / 心率 / 血氧）
 - Sleep research / improvement cards / 睡眠研究 / 改善卡片
 - Trial watchface auto-export (re-ID'd → Download/, third-party import) + cleanup protection / 试用表盘自动导出（换新 ID → Download/，第三方导入）+ 防删除保护
+- App update dialog ("Update available" prompt) / 应用更新弹窗（"发现新版本"提示）
 
-A built-in settings UI with 16 toggles is included (dark/light theme aware).
-内置设置界面（16 个开关，跟随系统深浅色）。
+A built-in settings UI with 17 toggles is included (dark/light theme aware).
+内置设置界面（17 个开关，跟随系统深浅色）。
 
 ## Requirements / 要求
 
 - LSPosed ≥ 2.1.1 (Zygisk) / KernelSU
-- com.mi.health 3.58.0
+- com.mi.health 3.0+ (each hook installs independently; missing entry points on a version are skipped gracefully)
 
 ## Build / 构建
 
