@@ -3,6 +3,7 @@
 
     <!-- libxposed API 102 模块：不再需要 xposedmodule meta-data，
          模块声明全部位于 META-INF/xposed/（module.prop / java_init.list / scope.list） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:name=".MiFitnessApp"
         android:label="MiFitnessAdAway"
