@@ -15,8 +15,8 @@ Package name: io.github.hao1196561270.mifitnessadaway
 Module name: MiFitnessAdAway
 Source repository: https://github.com/hao1196561270/MiFitnessAdAway
 
-小米运动健康（com.mi.health 3.0+）去广告模块，libxposed API 102 现代模块。
-Remove ads from Xiaomi Mi Fitness (com.mi.health 3.0+), modern libxposed API 102 module.
+小米运动健康（com.mi.health/com.xiaomi.wearable 3.0+）去广告模块，libxposed API 102 现代模块。
+Remove ads from Xiaomi Mi Fitness (com.mi.health/com.xiaomi.wearable 3.0+), modern libxposed API 102 module.
 ```
 
 bot 会自动创建 `Xposed-Modules-Repo/io.github.hao1196561270.mifitnessadaway` 仓库并邀请你为 admin（接受邀请后进入第 2 步）。

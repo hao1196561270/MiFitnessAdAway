@@ -50,7 +50,10 @@ import io.github.libxposed.api.XposedModule;
 public class AdAwayModule extends XposedModule {
 
     public static final String TAG = "MiFitnessAdAway";
-    private static final String TARGET_PACKAGE = "com.mi.health";
+
+    private static boolean isTargetPackage(String pkg) {
+        return "com.mi.health".equals(pkg) || "com.xiaomi.wearable".equals(pkg);
+    }
 
     private SharedPreferences mPrefs;
 
@@ -63,14 +66,14 @@ public class AdAwayModule extends XposedModule {
 
     @Override
     public void onPackageLoaded(PackageLoadedParam param) {
-        if (!TARGET_PACKAGE.equals(param.getPackageName())) {
+        if (!isTargetPackage(param.getPackageName())) {
             detach();
         }
     }
 
     @Override
     public void onPackageReady(PackageReadyParam param) {
-        if (!TARGET_PACKAGE.equals(param.getPackageName())) {
+        if (!isTargetPackage(param.getPackageName())) {
             return;
         }
         try {
@@ -142,10 +145,13 @@ public class AdAwayModule extends XposedModule {
     /** 表盘缓存根目录（优先按 Context 推导，多用户下仍正确；失败回退硬编码路径）。 */
     private File watchFaceRoot() {
         Context ctx = targetContext();
-        File base = ctx != null ? ctx.getExternalFilesDir(null) : null;
+	if (ctx == null) {
+            log(Log.ERROR, TAG, "watchFaceRoot: target context is null");
+            return null;
+        }
+        File base = ctx.getExternalFilesDir(null);
         if (base == null) {
-            return new File(
-                    "/storage/emulated/0/Android/data/com.mi.health/files/WatchFace");
+            return new File("/storage/emulated/0/Android/data/" + ctx.getPackageName() + "/files/WatchFace");
         }
         return new File(base, "WatchFace");
     }
@@ -901,7 +907,7 @@ public class AdAwayModule extends XposedModule {
             return;
         }
         if (v.getResources() != null && mAqContainerResId == 0) {
-            mAqContainerResId = v.getResources().getIdentifier("aqContainer", "id", "com.mi.health");
+            mAqContainerResId = v.getResources().getIdentifier("aqContainer", "id", v.getContext().getPackageName());
         }
         if (mAqContainerResId != 0 && v.getId() == mAqContainerResId) {
             if (v.getVisibility() != View.GONE) {
@@ -981,10 +987,10 @@ public class AdAwayModule extends XposedModule {
         }
         if (v.getResources() != null) {
             if (mSleepResearchResId == 0) {
-                mSleepResearchResId = v.getResources().getIdentifier("healthSleepResearchLayoutSet", "id", "com.mi.health");
+                mSleepResearchResId = v.getResources().getIdentifier("healthSleepResearchLayoutSet", "id", v.getContext().getPackageName());
             }
             if (mSleepInterfereResId == 0) {
-                mSleepInterfereResId = v.getResources().getIdentifier("sleepInterfereLayout", "id", "com.mi.health");
+                mSleepInterfereResId = v.getResources().getIdentifier("sleepInterfereLayout", "id", v.getContext().getPackageName());
             }
         }
         if (mSleepResearchResId != 0 && v.getId() == mSleepResearchResId) {
@@ -1270,6 +1276,9 @@ public class AdAwayModule extends XposedModule {
         }
         try {
             File root = watchFaceRoot();
+            if (root == null) {
+                return;
+            }
             File[] dids = root.listFiles();
             if (dids == null) {
                 return;

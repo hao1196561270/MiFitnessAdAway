@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-小米运动健康（`com.mi.health` 3.0+）去广告 LSPosed 模块，基于现代 libxposed API 102 开发（适配 LSPosed ≥ v2.1.1 / KernelSU）。
+小米运动健康（`com.mi.health/com.xiaomi.wearable` 3.0+）去广告 LSPosed 模块，基于现代 libxposed API 102 开发（适配 LSPosed ≥ v2.1.1 / KernelSU）。
 
 > **v1.0.6 已在真机验证**（一加 PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1）：开屏 / 健康 / 运动 / 设备 / 我的 及健康详情页广告全部清除，正常功能完好；试用表盘自动导出供第三方导入。
 
@@ -53,7 +53,7 @@
 ## 要求
 
 - LSPosed ≥ 2.1.1（Zygisk）/ KernelSU
-- `com.mi.health` 3.0+（每个 hook 独立安装，某版本缺失的入口自动跳过，其余照常生效）
+- `com.mi.health/com.xiaomi.wearable` 3.0+（每个 hook 独立安装，某版本缺失的入口自动跳过，其余照常生效）
 
 ## 构建
 
@@ -69,7 +69,7 @@ gradle assembleRelease   # 产物 app/build/outputs/apk/release/app-release.apk
 
 1. 真机 root（KernelSU 或 Magisk）+ LSPosed v2.1.1+（Zygisk）
 2. `adb install app-release.apk`
-3. LSPosed 中启用模块（作用域已含 `com.mi.health`）
+3. LSPosed 中启用模块（作用域已含 `com.mi.health/com.xiaomi.wearable`）
 4. 重启一次；打开桌面图标可调整开关
 
 ## 仓库结构

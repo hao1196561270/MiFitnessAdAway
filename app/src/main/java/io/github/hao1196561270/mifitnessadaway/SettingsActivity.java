@@ -24,7 +24,7 @@ import io.github.libxposed.service.XposedServiceHelper;
 /**
  * 设置界面：去广告开关列表（Q15-A：libxposed RemotePreferences 方案）。
  * 通过 XposedService 获取 RemotePreferences，写入后框架自动同步到
- * com.mi.health 进程，hook 侧动态读取——改完即生效（无需重启）。
+ * com.mi.health/com.xiaomi.wearable 进程，hook 侧动态读取——改完即生效（无需重启）。
  *
  * v1.0：状态栏高度 padding（edge-to-edge 适配）。
  * v1.1：颜色跟随系统深浅色模式（浅色=白底黑字，深色=深底白字）。
