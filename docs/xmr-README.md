@@ -1,8 +1,8 @@
 # MiFitnessAdAway
 
-Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.0+). A modern LSPosed module built with libxposed API 102.
+Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health/com.xiaomi.wearable` 3.0+). A modern LSPosed module built with libxposed API 102.
 
-Remove ads from 小米运动健康 (`com.mi.health` 3.0+) - 现代 libxposed API 102 模块。
+Remove ads from 小米运动健康 (`com.mi.health/com.xiaomi.wearable` 3.0+) - 现代 libxposed API 102 模块。
 
 ## What it removes / 移除内容
 
@@ -24,7 +24,7 @@ A built-in settings UI with 18 toggles is included (dark/light theme aware).
 ## Requirements / 要求
 
 - LSPosed ≥ 2.1.1 (Zygisk) / KernelSU
-- com.mi.health 3.0+ (each hook installs independently; missing entry points on a version are skipped gracefully)
+- com.mi.health/com.xiaomi.wearable 3.0+ (each hook installs independently; missing entry points on a version are skipped gracefully)
 
 ## Build / 构建
 

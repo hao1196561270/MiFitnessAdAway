@@ -34,7 +34,7 @@ The Sleep page moved to React Native in 3.59.0, silently disabling the v1.0.2 na
 The "Update available" dialog (`AppUpgradeUtil.showUpdateDialogIfNeed`) is now skipped via a new toggle (16 → 17, default on). Background version check still runs, and manual update check on the Mine page is unaffected.
 
 **Change: version-agnostic support**
-The 3.58.0-only wording is dropped: every hook installs independently with isolated failure, so the module runs on `com.mi.health` 3.0+ and degrades gracefully where a version's entry points differ. No version checks in code, no version lock in scope.
+The 3.58.0-only wording is dropped: every hook installs independently with isolated failure, so the module runs on `com.mi.health/com.xiaomi.wearable` 3.0+ and degrades gracefully where a version's entry points differ. No version checks in code, no version lock in scope.
 
 **Cleanup: Dead-code audit**
 Full audit (unused-method scan, imports, comments): no dead code — the tree was already clean after the v1.0.4 cleanup and v1.0.5 refactor.
@@ -45,7 +45,7 @@ Full audit (unused-method scan, imports, comments): no dead code — the tree wa
 "发现新版本"弹窗（`AppUpgradeUtil.showUpdateDialogIfNeed`）新增开关去除（16 → 17 个，默认开启）。后台版本检查照常跑，"我的"页手动检查更新不受影响。
 
 **变更：版本通杀**
-去掉仅 3.58.0 的说法：每个 hook 独立安装、失败隔离，`com.mi.health` 3.0+ 均可运行，某版本入口有差异时优雅降级。代码无版本判断，作用域无版本锁定。
+去掉仅 3.58.0 的说法：每个 hook 独立安装、失败隔离，`com.mi.health/com.xiaomi.wearable` 3.0+ 均可运行，某版本入口有差异时优雅降级。代码无版本判断，作用域无版本锁定。
 
 **清理：无用代码审计**
 全量审计（无用方法扫描、import、注释）：无死代码——v1.0.4 清理 + v1.0.5 重构后本就干净。

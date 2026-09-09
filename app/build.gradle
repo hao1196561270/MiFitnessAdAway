@@ -62,6 +62,6 @@ dependencies {
     // 模块 App 与框架通信（设置页用 RemotePreferences）
     implementation 'io.github.libxposed:service:102.0.0'
     // AdAwayModule 的 LiveData getter hook 引用了 androidx.lifecycle.MutableLiveData：
-    // 运行期由目标 App（com.mi.health 自带 lifecycle）提供，仅编译期需要 → compileOnly 不进包
+    // 运行期由目标 App（com.mi.health/com.xiaomi.wearable 自带 lifecycle）提供，仅编译期需要 → compileOnly 不进包
     compileOnly 'androidx.lifecycle:lifecycle-livedata-core:2.8.7'
 }

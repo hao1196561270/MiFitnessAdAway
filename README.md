@@ -2,7 +2,7 @@
 
 English | [中文](README_zh.md)
 
-Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health` 3.0+), built as a modern **libxposed API 102** LSPosed module (requires LSPosed ≥ v2.1.1 / KernelSU).
+Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health/com.xiaomi.wearable` 3.0+), built as a modern **libxposed API 102** LSPosed module (requires LSPosed ≥ v2.1.1 / KernelSU).
 
 > **v1.0.7 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
 
@@ -55,7 +55,7 @@ The settings UI follows the system dark/light theme.
 ## Requirements
 
 - LSPosed ≥ 2.1.1 (Zygisk) / KernelSU
-- `com.mi.health` 3.0+ (every hook installs independently — entry points missing on a version are skipped gracefully, the rest keep working)
+- `com.mi.health/com.xiaomi.wearable` 3.0+ (every hook installs independently — entry points missing on a version are skipped gracefully, the rest keep working)
 
 ## Build
 
@@ -71,7 +71,7 @@ If `keystore/mifitnessadaway.keystore` and `keystore/signing.properties` exist l
 
 1. Rooted device (KernelSU or Magisk) + LSPosed v2.1.1+ (Zygisk)
 2. `adb install app-release.apk`
-3. Enable the module in LSPosed (static scope already includes `com.mi.health`)
+3. Enable the module in LSPosed (static scope already includes `com.mi.health/com.xiaomi.wearable`)
 4. Reboot once; open the module launcher icon to adjust toggles
 
 ## Repository layout
