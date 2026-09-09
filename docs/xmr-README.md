@@ -12,13 +12,14 @@ Remove ads from 小米运动健康 (`com.mi.health` 3.0+) - 现代 libxposed API
 - Device red dots (bottom nav "Device" tab + home "System settings" entry) / 设备红点（底部"设备"tab + 首页"系统设置"入口）
 - Sport tab carousel & operation cards (below "training index") / 运动页轮播卡与运营卡（训练指标以下）
 - Mine tab VIP membership card & doctor consultation card / 我的页 VIP 会员卡与健康问诊卡
-- Health detail pages consultation cards (Sleep / Heart rate / SpO₂) / 健康详情页问诊卡片（睡眠 / 心率 / 血氧）
+- Health detail pages consultation cards (Sleep / Heart rate / SpO₂ / Stress) / 健康详情页问诊卡片（睡眠 / 心率 / 血氧 / 压力）
 - Sleep research / improvement cards / 睡眠研究 / 改善卡片
+- Weight page personalized plan card / 体重页个性化减重方案栏
 - Trial watchface auto-export (re-ID'd → Download/, third-party import) + cleanup protection / 试用表盘自动导出（换新 ID → Download/，第三方导入）+ 防删除保护
 - App update dialog ("Update available" prompt) / 应用更新弹窗（"发现新版本"提示）
 
-A built-in settings UI with 17 toggles is included (dark/light theme aware).
-内置设置界面（17 个开关，跟随系统深浅色）。
+A built-in settings UI with 18 toggles is included (dark/light theme aware).
+内置设置界面（18 个开关，跟随系统深浅色）。
 
 ## Requirements / 要求
 

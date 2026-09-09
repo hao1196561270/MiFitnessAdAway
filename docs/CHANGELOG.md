@@ -1,5 +1,37 @@
 # Changelog 更新日志
 
+## v1.0.7 (versionCode 27)
+
+### English
+
+**New: Weight plan card removal**
+The "个性化减重方案" whole card on the Weight page is now removed via a new toggle (17 → 18, default on). The page is React Native (`YRNCFragment`) with server-driven copy, so removal is a title-text view-tree scan on the shared RN host — no stable data hook exists.
+
+**Improved: Stress consult card**
+The Stress page consult card ("健康问诊") is covered by the existing health-consult toggle: same data-layer binder was already blocked, plus its static fallback content is now removed by the same RN title-scan (page-gated by "了解压力", no new toggle).
+
+**Fixed: Sleep research cards on 3.59.0**
+The Sleep page moved to React Native in 3.59.0, silently disabling the v1.0.2 native hooks — research/improvement cards reappeared. They are now removed by the same RN title-scan under the existing sleep-cards toggle (native hooks kept for older versions).
+
+**Note**
+Gap-filling (sibling shift-up) was reverted: unreliable on RN pages that re-layout continuously — cards are hidden, blank space stays. All existing features unchanged.
+
+### 中文
+
+**新增：体重减重方案栏去除**
+体重页"个性化减重方案"整卡新增开关去除（17 → 18 个，默认开启）。该页为 RN 页（`YRNCFragment`）、文案服务端下发，走共用 RN 宿主标题文本扫描，无稳定数据接口。
+
+**改进：压力问诊卡**
+压力页问诊卡（"健康问诊"）纳入原有健康问诊开关：数据层同 binder 早已拦截，静态兜底内容改走同套 RN 标题扫描（以"了解压力"限域，不新增开关）。
+
+**修复：3.59.0 睡眠研究卡复活**
+3.59.0 睡眠页迁入 RN，原生钩静默失效，研究/改善卡重现。现改走同套 RN 标题扫描（沿用睡眠卡片开关，原生钩保留给老版本）。
+
+**其他**
+填空白（兄弟上移）已回退：持续重排的 RN 页上不可靠——卡照藏，空白留白。原有功能不变。
+
+---
+
 ## v1.0.6 (versionCode 26)
 
 ### English

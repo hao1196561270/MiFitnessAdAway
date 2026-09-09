@@ -19,6 +19,7 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -105,13 +106,19 @@ public class AdAwayModule extends XposedModule {
     }
 
     /**
-     * 通用轮询：主线程每 800ms 执行一次 action，共 9 轮。
+     * 通用轮询：主线程每 800ms 执行一次 action，默认共 9 轮。
      * 原 scheduleViewScan / scheduleSportViewScan / scheduleAqScan /
      * scheduleSleepCardScan 四个同形方法合并于此，行为一致。
      */
     private void scheduleRepeat(final View root, final int round,
                                 final String errTag, final ViewAction action) {
-        if (round > 8) {
+        scheduleRepeat(root, round, errTag, action, 8);
+    }
+
+    /** 可定轮数的轮询（服务端晚到的卡给更多轮，如减重方案卡 21 轮约 16 秒）。 */
+    private void scheduleRepeat(final View root, final int round,
+                                final String errTag, final ViewAction action, final int max) {
+        if (round > max) {
             return;
         }
         new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
@@ -119,7 +126,7 @@ public class AdAwayModule extends XposedModule {
             public void run() {
                 try {
                     action.run(root);
-                    scheduleRepeat(root, round + 1, errTag, action);
+                    scheduleRepeat(root, round + 1, errTag, action, max);
                 } catch (Throwable t) {
                     log(Log.ERROR, TAG, errTag, t);
                 }
@@ -175,15 +182,23 @@ public class AdAwayModule extends XposedModule {
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_SPORT_CARDS)) {
             hookSportTabViewScan(cl);
         }
-        // 健康页问诊卡片（睡眠/心率/血氧三页）：数据层 = PingAnHealth bindOneBanner/bindTwoBanners
+        // 健康页问诊卡片（睡眠/心率/血氧/压力四页）：数据层 = PingAnHealth bindOneBanner/bindTwoBanners
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_HEALTH_CONSULT)) {
             hookPingAnConsult(cl);
             // 睡/心率页顶部「蚂蚁阿福 AI 解读」卡无数据接口，视图层隐藏（Q6-B）
             hookAqViewHide(cl);
+            // 压力页问诊卡见 hookWeightPlanCard（RN 宿主统一扫描，备注看那）
         }
         // 睡眠页底部研究/改善运营卡（Q1-A 开关，Q2-A 视图层精准法）
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_SLEEP_CARDS)) {
             hookSleepCards(cl);
+        }
+        // 体重页「个性化减重方案」整卡 + 压力页问诊卡 + 睡眠页研究/改善卡
+        // （RN 页标题文本扫描 + 上卷移除；任一开关开即安装，运行时各自门控）
+        if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_WEIGHT_PLAN)
+                || Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_HEALTH_CONSULT)
+                || Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_SLEEP_CARDS)) {
+            hookWeightPlanCard(cl);
         }
         // 设备页红点：主页「系统设置」入口 + 底部导航「设备」tab 红点（伪装忽略电池优化方案）
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_DEVICE_RED_DOT)) {
@@ -817,7 +832,9 @@ public class AdAwayModule extends XposedModule {
      * 数据层：让 PingAnHealthExtKt.bindOneBanner / bindTwoBanners 直接返回（不渲染卡片）。
      * 目标 app 对海外/Play 渠道用户本来就不显示这张卡（isPlayChannel 分支 gone），
      * 此处模拟该官方逻辑：hook 返回 null 即跳过原方法 → 卡片不上屏、不占位。
-     * 睡眠（dept 7）、心率（dept 0）、血氧（dept 3）均经 bindOneBanner$default → bindOneBanner。
+     * 睡眠（dept 7）、心率（dept 0）、血氧（dept 3）、压力（dept 1）均经
+     * bindOneBanner$default → bindOneBanner，本钩全部门控；
+     * 压力页另有静态兜底内容，见 hookStressConsultCard。
      */
     private void hookPingAnConsult(ClassLoader cl) throws Throwable {
         String clsName = "com.xiaomi.fitness.util.PingAnHealthExtKt";
@@ -922,6 +939,45 @@ public class AdAwayModule extends XposedModule {
         }
     }
 
+    /**
+     * 压力页健康问诊卡入口（StressDayWeekMonthItemFragment 日/周/月同页已废弃，
+     * 实机该页是 RN，见 hookWeightPlanCard）：保留此备注，逻辑走 RN 统一扫描。
+     * 数据层 bindOneBanner 照拦（防个性化内容），静态兜底内容由视图层移除。
+     * 复用健康问诊总开关，不新增开关。
+     */
+    private void hideStressConsultRoot(View root) {
+        if (root == null) {
+            return;
+        }
+        // 页面门：只有含「了解压力」的页才是压力页（防「健康问诊」误伤别的 RN 页）
+        if (!subtreeHasText(root, "了解压力", 0, 30)) {
+            return;
+        }
+        hideStressConsultCard(root);
+    }
+
+    /** 扫描压力页视图树，命中「健康问诊」标题即整卡移除 */
+    private void hideStressConsultCard(View v) {
+        if (v == null) {
+            return;
+        }
+        if (v instanceof TextView) {
+            CharSequence cs = ((TextView) v).getText();
+            String text = cs == null ? "" : cs.toString();
+            if (!text.isEmpty() && text.contains("健康问诊")
+                    && Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_HEALTH_CONSULT)) {
+                hideWholeCardByMarker(v, "健康问诊", STRESS_CONSULT_MARKER);
+            }
+            return; // TextView 无子视图
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                hideStressConsultCard(vg.getChildAt(i));
+            }
+        }
+    }
+
     // ===================== 睡眠页研究/改善运营卡（Q1-A / Q2-A） =====================
 
     /** healthSleepResearchLayoutSet / sleepInterfereLayout 资源 id（延时解析） */
@@ -1015,6 +1071,172 @@ public class AdAwayModule extends XposedModule {
         handledCards.add(key);
         v.setVisibility(View.GONE);
         log(Log.INFO, TAG, "hidden: " + what + " (" + v.getClass().getSimpleName() + ")");
+    }
+
+    // ===================== 体重页个性化减重方案卡 =====================
+
+    /**
+     * RN 页标题卡移除（体重页红框整卡 + 压力页问诊卡 + 睡眠页研究/改善卡）：
+     * 实机验证这几页都是 RN 页（WearableRNActivity/YRNCFragment），3.59.0 起
+     * 睡眠页也迁入 RN，原生 SleepDayItemFragment 等不再创建 → 原生钩静默失效。
+     * 钩 RN 宿主 onResume，按标题文本视图树扫描（标题各自只会出现在自家
+     * 页面；压力还加「了解压力」页面门，防止「健康问诊」四字误伤别的 RN 页），
+     * 命中后整卡移除（与「我的」页同一套 collapseUp）。
+     * 轮数 21 轮（约 16 秒）：卡片内容服务端晚到，9 轮可能扑空。
+     * 安装门控：相关开关任一开即装；运行时各扫各的开关。原生钩保留，
+     * 老版本仍走原生链路（失败隔离，互不干扰）。
+     */
+    private void hookWeightPlanCard(ClassLoader cl) throws Throwable {
+        tryHook("YRNCFragment.onResume (weight+stress+sleep scan)", () -> {
+            Class<?> clazz = Class.forName("com.xiaomi.yrn.controller.ui.YRNCFragment", true, cl);
+            Method m = clazz.getDeclaredMethod("onResume");
+            m.setAccessible(true);
+            hook(m).intercept(chain -> {
+                Object result = chain.proceed();
+                try {
+                    Object frag = chain.getThisObject();
+                    Method getView = frag.getClass().getMethod("getView");
+                    View root = (View) getView.invoke(frag);
+                    if (root != null) {
+                        log(Log.INFO, TAG, "weight+stress+sleep scan started");
+                        scheduleRepeat(root, 0, "weight plan scan error",
+                                this::hideWeightPlanCard, 20);
+                        scheduleRepeat(root, 0, "stress consult scan error",
+                                this::hideStressConsultRoot, 20);
+                        scheduleRepeat(root, 0, "sleep research scan error",
+                                this::hideSleepResearchCard, 20);
+                    }
+                } catch (Throwable t) {
+                    log(Log.ERROR, TAG, "weight plan root failed", t);
+                }
+                return result;
+            });
+        });
+    }
+
+    /**
+     * 睡眠页研究/改善卡：健康研究（睡眠呼吸暂停研究/睡眠健康研究，暂无数据）
+     * + 睡眠改善计划（21 天）。标记取卡内稳定文案（免责声明「仅供参考」/
+     * 宣传语「21天」，不随数据变化；注意不用「健康研究」做标记——
+     * 「睡眠健康研究」标题本身就包含它，会误判为行容器）。
+     */
+    private void hideSleepResearchCard(View v) {
+        if (v == null) {
+            return;
+        }
+        if (v instanceof TextView) {
+            CharSequence cs = ((TextView) v).getText();
+            String text = cs == null ? "" : cs.toString();
+            if (!text.isEmpty() && Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_SLEEP_CARDS)) {
+                if (text.equals("健康研究") || text.contains("睡眠呼吸暂停研究")
+                        || text.contains("睡眠健康研究")) {
+                    hideWholeCardByMarker(v, text, "仅供参考");
+                } else if (text.contains("睡眠改善计划")) {
+                    // 注意：正文是"21 天改善…"（半角空格），不是"21天"
+                    hideWholeCardByMarker(v, text, "改善您的睡眠");
+                }
+            }
+            return; // TextView 无子视图
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                hideSleepResearchCard(vg.getChildAt(i));
+            }
+        }
+    }
+
+    /** 扫描体重页视图树，命中「个性化减重方案」标题即整卡移除 */
+    private void hideWeightPlanCard(View v) {
+        if (v == null) {
+            return;
+        }
+        if (v instanceof TextView) {
+            CharSequence cs = ((TextView) v).getText();
+            String text = cs == null ? "" : cs.toString();
+            if (!text.isEmpty() && text.contains("个性化减重方案")
+                    && Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_WEIGHT_PLAN)) {
+                hideWholeCardByMarker(v, "个性化减重方案", WEIGHT_PLAN_MARKER);
+            }
+            return; // TextView 无子视图
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                hideWeightPlanCard(vg.getChildAt(i));
+            }
+        }
+    }
+
+    /** 减重方案卡内标记文案（与标题同卡，用于定位卡片容器） */
+    private static final String WEIGHT_PLAN_MARKER = "计划减重";
+    /** 压力问诊卡内标记文案（与标题同卡，用于定位卡片容器） */
+    private static final String STRESS_CONSULT_MARKER = "会员免费";
+
+    /**
+     * 整卡移除（collapseUp 到父容器就停，因为卡内全是正常文案）：
+     * 1) 从标题上卷到同时包含标题与标记的最小容器 = 卡片本体；
+     * 2) 外层同尺寸包裹（clickable 外壳）一并归入；
+     * 3) GONE。标记未渲染/卡片无高度时退化为只藏标题行等下一轮。
+     * （不做兄弟上移填空白：RN 页填白不可靠，留白。）
+     */
+    private void hideWholeCardByMarker(View titleView, String titleKw, String markerKw) {
+        try {
+            View node = titleView;
+            ViewParent p = node.getParent();
+            int levels = 0;
+            View card = null;
+            while (p instanceof ViewGroup && levels < 6) {
+                ViewGroup pv = (ViewGroup) p;
+                if (subtreeHasText(pv, markerKw, 0, 5)) {
+                    card = pv;
+                    break;
+                }
+                node = pv;
+                p = pv.getParent();
+                levels++;
+            }
+            if (card == null || card.getHeight() <= 100) {
+                hideCardContaining(titleView, titleKw);
+                return;
+            }
+            ViewParent pp = card.getParent();
+            if (pp instanceof ViewGroup && !(pp instanceof ScrollView)) {
+                ViewGroup outer = (ViewGroup) pp;
+                if (Math.abs(outer.getHeight() - card.getHeight()) < 120) {
+                    card = outer;
+                }
+            }
+            String key = Integer.toHexString(System.identityHashCode(card));
+            handledCards.add(key);
+            if (card.getVisibility() != View.GONE) {
+                card.setVisibility(View.GONE);
+                log(Log.INFO, TAG, "hidden: " + titleKw + "整卡 layer="
+                        + card.getClass().getSimpleName() + " (h=" + card.getHeight() + ")");
+            }
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "hideWholeCard error", t);
+        }
+    }
+
+    /** 子树是否含指定文案（限深） */
+    private boolean subtreeHasText(View v, String kw, int depth, int max) {
+        if (v == null || depth > max) {
+            return false;
+        }
+        if (v instanceof TextView) {
+            CharSequence cs = ((TextView) v).getText();
+            return cs != null && cs.toString().contains(kw);
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                if (subtreeHasText(vg.getChildAt(i), kw, depth + 1, max)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     // ===================== 设备页红点（底部tab + 主页系统设置入口） =====================
