@@ -19,6 +19,7 @@ import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
+import android.widget.AdapterView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -1183,8 +1184,8 @@ public class AdAwayModule extends XposedModule {
      * 整卡移除（collapseUp 到父容器就停，因为卡内全是正常文案）：
      * 1) 从标题上卷到同时包含标题与标记的最小容器 = 卡片本体；
      * 2) 外层同尺寸包裹（clickable 外壳）一并归入；
-     * 3) GONE。标记未渲染/卡片无高度时退化为只藏标题行等下一轮。
-     * （不做兄弟上移填空白：RN 页填白不可靠，留白。）
+     * 3) GONE + 链式上移填空白（reassertShiftChain，见下）。
+     * 标记未渲染/卡片无高度时退化为只藏标题行等下一轮。
      */
     private void hideWholeCardByMarker(View titleView, String titleKw, String markerKw) {
         try {
@@ -1220,9 +1221,84 @@ public class AdAwayModule extends XposedModule {
                 log(Log.INFO, TAG, "hidden: " + titleKw + "整卡 layer="
                         + card.getClass().getSimpleName() + " (h=" + card.getHeight() + ")");
             }
+            reassertShiftChain(card);
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "hideWholeCard error", t);
         }
+    }
+
+    /**
+     * 重申上移（祖先链）：从卡片逐层上卷，ScrollView 或复用容器处停。
+     * 每层统计"其上方累计死区"：直接 GONE 兄弟高度 + 之前可见兄弟
+     * 子树内的嵌套死区（subtreeDeadHeight），每个可见孩子上移该累计值
+     * （绝对值，重复调用收敛不叠加）。
+     * 为什么要累加嵌套死区：死区常藏在深层容器里（如体重卡藏在记餐容器内，
+     * 而今日运动建议在外层容器），单层直接统计看不到它，外层兄弟一次移不够。
+     * 只走卡片祖先链：不碰别页（ViewPager 兄弟页）、不进复用容器，
+     * 只认 handledCards 里的我方隐藏，App 自藏的不动。
+     */
+    private void reassertShiftChain(View card) {
+        try {
+            ViewParent p = card.getParent();
+            int levels = 0;
+            while (p instanceof ViewGroup && levels < 10) {
+                ViewGroup vg = (ViewGroup) p;
+                if (vg instanceof ScrollView || isAdapterContainer(vg)) {
+                    break;
+                }
+                int running = 0;
+                for (int i = 0; i < vg.getChildCount(); i++) {
+                    View child = vg.getChildAt(i);
+                    if (child.getVisibility() == View.GONE) {
+                        if (handledCards.contains(
+                                Integer.toHexString(System.identityHashCode(child)))) {
+                            running += child.getHeight();
+                        }
+                        continue;
+                    }
+                    if (running > 0 && child.getTranslationY() != -running) {
+                        child.setTranslationY(-running);
+                    }
+                    running += subtreeDeadHeight(child, 0);
+                }
+                p = vg.getParent();
+                levels++;
+            }
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "reassertShift error", t);
+        }
+    }
+
+    /** 我方隐藏造成的子树死区总高度（限深；复用容器子树整棵跳过） */
+    private int subtreeDeadHeight(View v, int depth) {
+        if (v == null || depth > 8 || isAdapterContainer(v)) {
+            return 0;
+        }
+        int dead = 0;
+        if (v instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) v;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                View c = vg.getChildAt(i);
+                if (c.getVisibility() == View.GONE) {
+                    if (handledCards.contains(
+                            Integer.toHexString(System.identityHashCode(c)))) {
+                        dead += c.getHeight();
+                    }
+                } else {
+                    dead += subtreeDeadHeight(c, depth + 1);
+                }
+            }
+        }
+        return dead;
+    }
+
+    /** 复用型容器（子视图会被框架回收复用）：位移和隐藏统计一律跳过 */
+    private boolean isAdapterContainer(View v) {
+        if (v instanceof AdapterView) {
+            return true;
+        }
+        String name = v.getClass().getName();
+        return name.contains("RecyclerView") || name.contains("ViewPager");
     }
 
     /** 子树是否含指定文案（限深） */
