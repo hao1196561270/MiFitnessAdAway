@@ -13,9 +13,6 @@ The Stress page consult card ("健康问诊") is covered by the existing health-
 **Fixed: Sleep research cards on 3.59.0**
 The Sleep page moved to React Native in 3.59.0, silently disabling the v1.0.2 native hooks — research/improvement cards reappeared. They are now removed by the same RN title-scan under the existing sleep-cards toggle (native hooks kept for older versions).
 
-**Note**
-Gap-filling (sibling shift-up) was reverted: unreliable on RN pages that re-layout continuously — cards are hidden, blank space stays. All existing features unchanged.
-
 ### 中文
 
 **新增：体重减重方案栏去除**
@@ -26,9 +23,6 @@ Gap-filling (sibling shift-up) was reverted: unreliable on RN pages that re-layo
 
 **修复：3.59.0 睡眠研究卡复活**
 3.59.0 睡眠页迁入 RN，原生钩静默失效，研究/改善卡重现。现改走同套 RN 标题扫描（沿用睡眠卡片开关，原生钩保留给老版本）。
-
-**其他**
-填空白（兄弟上移）已回退：持续重排的 RN 页上不可靠——卡照藏，空白留白。原有功能不变。
 
 ---
 
