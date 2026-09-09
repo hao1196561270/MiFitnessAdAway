@@ -152,7 +152,7 @@ public class AdAwayModule extends XposedModule {
     /** 表盘缓存根目录（优先按 Context 推导，多用户下仍正确；失败回退硬编码路径）。 */
     private File watchFaceRoot() {
         Context ctx = targetContext();
-	if (ctx == null) {
+        if (ctx == null) {
             log(Log.ERROR, TAG, "watchFaceRoot: target context is null");
             return null;
         }
