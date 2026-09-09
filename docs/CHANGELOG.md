@@ -1,5 +1,31 @@
 # Changelog 更新日志
 
+## v1.0.8 (versionCode 28)
+
+### English
+
+**New: International app support**
+`com.xiaomi.wearable` (overseas edition) is now in scope alongside `com.mi.health`: package gates, watchface cache path and resource lookup all resolve per-package. Hooks fail soft per entry point, so unsupported screens on either app are skipped gracefully (contributed by @cloudskytian, PR #5).
+
+**Fixed: Sleep research leftovers**
+Follow-up hardening of the RN title-scan: marker fix ("21 天" has a space), whole-card locating and chain gap-fill now handle cards nested deep in containers. Native hooks kept for older versions.
+
+**Build: CI autofix**
+`gradle build` goes green again (missing notification permission for the export notifier, PR #6) and GitHub Actions now builds on every push/PR automatically (PR #7).
+
+### 中文
+
+**新增：国际版支持**
+`com.xiaomi.wearable`（海外版）与 `com.mi.health` 同入作用域：包名门控、表盘缓存路径、资源查询全部按包动态解析。hook 逐入口失败隔离，不支持的页面优雅跳过（@cloudskytian 贡献，PR #5）。
+
+**修复：睡眠研究卡残留**
+RN 标题扫描后续打磨：标记修正（"21 天"中间有空格）、整卡定位、链式填白，专治嵌在深层容器里的卡。原生钩保留给老版本。
+
+**构建：CI 修好**
+`gradle build` 重新变绿（导出通知缺权限，PR #6），GitHub Actions 此后每次推送/PR 自动构建（PR #7）。
+
+---
+
 ## v1.0.7 (versionCode 27)
 
 ### English
