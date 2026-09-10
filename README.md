@@ -2,65 +2,71 @@
 
 English | [中文](README_zh.md)
 
-Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health/com.xiaomi.wearable` 3.0+), built as a modern **libxposed API 102** LSPosed module (requires LSPosed ≥ v2.1.1 / KernelSU).
+An LSPosed module that removes ads and promotion popups from **Xiaomi Mi Fitness / 小米运动健康** (`com.mi.health`, and the international build `com.xiaomi.wearable`), built on the modern **libxposed API 102**.
 
-> **v1.1.0 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
+> **v1.1.0, verified on device** — OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1: every page below stays clean, all normal features work, trial watchfaces export for third-party import.
 
-## Features
+## What it removes
 
-| Removed ads | Status |
+Grouped the same way as the settings cards, so you can find a switch by the screen it belongs to:
+
+| Where | What is removed |
 |---|---|
-| Splash ads (image/video) | ✅ |
-| Home health tab promotion cards | ✅ |
-| Device tab promotion cards | ✅ |
-| Device red dots (bottom nav "Device" tab + home "System settings" entry) | ✅ |
-| Sport tab carousel cards | ✅ |
-| Sport tab operation cards (below "training index") | ✅ + scroll disabled |
-| Mine tab VIP membership card | ✅ |
-| Mine tab doctor consultation card | ✅ |
-| Health detail pages consultation cards (Sleep / Heart rate / SpO₂ / Stress) | ✅ |
-| "PingAn Health" consultation cards (data-layer: bindOneBanner/bindTwoBanners) | ✅ |
-| "AntBoy AI" interpretation card (top of Sleep / Heart rate pages) | ✅ |
-| Sleep page research / improvement cards (sleep-breathing-apnea research, sleep-health research, 21-day improvement plan) | ✅ |
-| Weight page personalized plan card ("个性化减重方案") | ✅ |
-| Trial watchface auto-export (re-ID'd → Download/, third-party import) + cleanup protection | ✅ (experimental) |
-| App update dialog ("Update available" prompt) | ✅ |
-| VIP promo popup ("会员限时低价福利" / "抢先购买") | ⚠️ unverified (server-driven, cannot be reproduced on demand) |
+| Splash | Splash ads (image / video) |
+| Popups | "Update available" dialog · full-screen VIP promo popup |
+| Home (health) | Health-tab promotion banner cards |
+| Device | Promotion cards · red dot on the bottom "Device" tab and on the home "System settings" entry |
+| Sport | Carousel cards · the whole operation area below "training index" (+ page scrolling disabled) |
+| Mine | VIP membership card · doctor consultation card |
+| Health detail | PingAn-Health consultation cards on Sleep / Heart rate / SpO₂ / Stress · "AntBoy AI" interpretation card · sleep research & 21-day improvement cards |
+| Weight | Personalized weight-loss plan card ("个性化减重方案") |
+| Everywhere | Xiaomi verification-SDK hook detection (`SensorHelper`) |
 
-The module app ships with a **grouped-card settings UI** with 16 toggles (libxposed RemotePreferences, changes take effect after restarting the target app). Switch groups follow the page they belong to, each group collapses by tapping its title (the collapsed state is remembered), and the top card shows a "enabled x/11" summary together with the master switch:
+## Settings UI
+
+One in-app screen, 16 toggles, no external config needed.
 
 | Card | Switches |
 |---|---|
-| Master | ad-removal master (own card, with the enabled-count summary) |
+| Master | ad-removal master — own card, shown together with the "enabled x/11" summary |
 | Splash & popups | splash ads · app-update dialog · VIP promo popup |
 | Mine | VIP membership card · doctor consultation card |
-| Sport | carousel cards · operation cards (below "training index") |
-| Device | red dots (bottom nav + system settings entry) |
+| Sport | carousel cards · operation cards below "training index" |
+| Device | red dots (bottom tab + system settings entry) |
 | Health detail | consultation cards (Sleep / Heart rate / SpO₂ / Stress) · sleep research/improvement cards · weight plan card |
 | Watchface | trial watchface auto-export (experimental, off by default) |
-| Other | anti-hook detection (`SensorHelper.A()/D()` → 0) · debug log · **hide launcher icon** (applies instantly, no restart needed) |
+| Other | anti-hook detection · debug log · **hide launcher icon** (applies instantly) |
 
-While the master switch is off, every switch that depends on it is dimmed and not tappable; debug log and hide-icon stay usable because they are not gated by it.
+- Tap a group title to collapse/expand it — the state is remembered.
+- Switch changes take effect after restarting Mi Fitness; no reboot.
+- While the master switch is off, every switch that depends on it is dimmed and not tappable. Debug log and hide-icon stay usable (they are not gated by the master).
+- Follows the system dark/light theme.
 
-The settings UI follows the system dark/light theme.
+## Extras
+
+- **Trial watchface auto-export (experimental)** — after a trial download finishes, the cached `resource.bin` is re-ID'd (`12→19` prefix, same length) and written to `Download/` under its Chinese name, ready for third-party import (verified with AstroBox on Xiaomi Smart Band 10 Pro). Exported IDs are filtered out of the server-side cleanup list so sideloaded faces survive sync, and the exported cache is cleaned up on the next scan (snapshot-based, with handoff/push guards). Every scan reports via Toast/notification.
+- **Hide launcher icon** — instantly hides the module's own icon; its settings page stays reachable from LSPosed.
+- **Debug log** — verbose hook logging for troubleshooting.
 
 ## How it works
 
-- **Data-layer interception**: banner APIs, splash cache, membership data, doctor data and PingAn-Health banner binders return empty / are skipped.
-- **View-layer fallback**: the "Mine" tab is rendered by React Native (YRN) — ad cards are collapsed layer-by-layer via view-tree scan, and following content is shifted up to fill the gap.
-- **Health detail pages**: the "AntBoy AI" interpretation card (AqView) and sleep research/improvement cards are hidden via view-tree scan with resource-id targeting.
-- **Device red dots**: `PowerManager.isIgnoringBatteryOptimizations` is faked to true (equivalent to "battery optimization ignored") plus face-entrance red-dot getters return false, which removes the bottom-nav "Device" tab dot and the home "System settings" entry dot.
-- **Sport anchor strategy**: everything below the "training index" anchor is removed as a whole, and page scrolling is disabled.
-- **Watchface auto-export (experimental)**: after a trial download, the cached `resource.bin` is re-ID'd (`12→19` prefix swap, same length) and written to `Download/` under its Chinese name for third-party import; exported IDs are filtered out of the server-side cleanup list so sideloaded faces survive sync; exported cache is removed whole-directory on the next scan (snapshot-based, with handoff/push guards); every scan reports via Toast/notification.
-
-- **App update dialog**: `AppUpgradeUtil.showUpdateDialogIfNeed` is skipped, so the "Update available" popup never shows (background version check still runs; manual update check on the Mine page is unaffected).
-- **VIP promo popup**: `MembershipDialogManager.showMembershipExpiredFaceDialog` is skipped, so the full-screen membership marketing popup never appears; the caller's dismiss callback is still invoked so the birthday-medal flow it continues is left intact. Only this automatic chain is blocked — the user-initiated purchase dialog (`showMembershipDialog`, opened by tapping "开通会员") is untouched.
-- **RN title cards**: Weight ("个性化减重方案"), Stress ("健康问诊") and Sleep ("健康研究/睡眠改善计划") cards are removed whole by title-text view-tree scan on the shared RN host (`YRNCFragment`), since these pages are React Native with server-driven copy and no stable data hooks.
+- **Data-layer interception first**: banner APIs, the splash cache, membership data, doctor data and PingAn-Health banner binders are emptied or skipped, which kills the ad before it is ever rendered.
+- **View-layer fallback**: several pages are React Native (YRN). Cards there are removed by scanning the view tree on the shared RN host (`YRNCFragment`) and taking out the whole card, located by its title text — these pages have server-driven copy and no stable data hooks.
+- **Reliability guards**: the "Mine" page collapses cards layer by layer and shifts following content up; the sport page removes everything below the "training index" anchor; hidden rows are tracked so repeated scans never double-shift.
+- **Device red dots**: `PowerManager.isIgnoringBatteryOptimizations` is faked to `true` (equivalent to "battery optimization ignored"), plus the face-entrance red-dot getters return `false` — that clears both the bottom-tab dot and the home "System settings" entry dot.
+- **Popups**: `AppUpgradeUtil.showUpdateDialogIfNeed` is skipped for the update prompt; `MembershipDialogManager.showMembershipExpiredFaceDialog` is skipped for the VIP promo popup, while still invoking the caller's dismiss callback so the birthday-medal flow it continues is left intact. A user-initiated purchase dialog is untouched.
+- **Version tolerance**: every hook installs independently and fails in isolation, so entry points that differ on a given app version are skipped gracefully while the rest keep working.
 
 ## Requirements
 
-- LSPosed ≥ 2.1.1 (Zygisk) / KernelSU
-- `com.mi.health/com.xiaomi.wearable` 3.0+ (every hook installs independently — entry points missing on a version are skipped gracefully, the rest keep working)
+- Rooted device (KernelSU or Magisk) + LSPosed ≥ 2.1.1 (Zygisk)
+- Xiaomi Mi Fitness `com.mi.health` / `com.xiaomi.wearable` 3.0+
+
+## Install
+
+1. Install `MiFitnessAdAway-*.apk` from [Releases](../../releases).
+2. Enable the module in LSPosed — the static scope already contains both package names.
+3. Reboot once, then open the module icon (or LSPosed → module settings) to adjust toggles.
 
 ## Build
 
@@ -70,24 +76,18 @@ Requires Gradle 9.5.1, AGP 9.2.1, JDK 17, compileSdk 37.
 gradle assembleRelease   # output: app/build/outputs/apk/release/app-release.apk
 ```
 
-If `keystore/mifitnessadaway.keystore` and `keystore/signing.properties` exist locally (both git-ignored), the release is signed with the real key; otherwise it falls back to the debug key.
-
-## Install
-
-1. Rooted device (KernelSU or Magisk) + LSPosed v2.1.1+ (Zygisk)
-2. `adb install app-release.apk`
-3. Enable the module in LSPosed (static scope already includes `com.mi.health/com.xiaomi.wearable`)
-4. Reboot once; open the module launcher icon to adjust toggles
+With `keystore/mifitnessadaway.keystore` and `keystore/signing.properties` present locally (both git-ignored) the release is signed with the real key; otherwise it falls back to the debug key. GitHub Actions builds every push and pull request automatically, but that artifact is debug-signed and only proves the code compiles.
 
 ## Repository layout
 
 ```
 app/src/main/java/io/github/hao1196561270/mifitnessadaway/
-├── AdAwayModule.java     # libxposed entry (all hooks)
-├── SettingsActivity.java # settings UI (dark/light adaptive, hide-icon toggle)
+├── AdAwayModule.java     # libxposed entry — all hooks
+├── SettingsActivity.java # settings UI (grouped cards, dark/light adaptive)
 ├── MiFitnessApp.java     # XposedService bridge (RemotePreferences)
 └── Prefs.java            # preference keys
 app/src/main/resources/META-INF/xposed/  # module declarations (module.prop / java_init.list / scope.list)
+.github/workflows/android.yml            # CI: build on push / pull request
 ```
 
 ## License
