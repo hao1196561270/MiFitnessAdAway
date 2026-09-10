@@ -19,8 +19,8 @@ Remove ads from 小米运动健康 (`com.mi.health/com.xiaomi.wearable` 3.0+) - 
 - App update dialog ("Update available" prompt) / 应用更新弹窗（"发现新版本"提示）
 - VIP promo popup ("会员限时低价福利" / "抢先购买", shipped unverified) / 会员推广弹窗（"会员限时低价福利"/"抢先购买"，未验证发布）
 
-A built-in settings UI with 19 toggles is included (dark/light theme aware).
-内置设置界面（19 个开关，跟随系统深浅色）。
+A built-in grouped-card settings UI with 16 toggles is included (dark/light theme aware). Groups follow the page each switch belongs to, collapse by tapping a group title, and a top card shows the enabled-count summary together with the master switch; dependent switches dim while the master is off.
+内置分组卡片式设置界面（16 个开关，跟随系统深浅色）。分组按开关所属界面划分，点标题可收起/展开，顶部卡片为启用数摘要 + 总开关；总开关关闭时依赖它的开关自动置灰。
 
 ## Requirements / 要求
 

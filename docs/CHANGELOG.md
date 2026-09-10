@@ -1,5 +1,35 @@
 # Changelog 更新日志
 
+## v1.1.0 (versionCode 30)
+
+### English
+
+**Major: settings UI redesign**
+The settings page is rebuilt from a flat 19-row list into grouped cards, so a switch is now found by the page it belongs to instead of by scrolling:
+`Master` (own card, with the "enabled x/11" summary) · `Splash & popups` · `Mine` · `Sport` · `Device` · `Health detail` · `Watchface` · `Other`.
+Groups collapse/expand by tapping their title and the state is remembered (stored in the module's own preferences). While the master switch is off, every switch that depends on it is dimmed and not tappable, so "I enabled a page switch but ads are still there" can no longer happen. No new dependency, no resource files — still plain platform views, APK size unchanged.
+
+**Removed: three switches that did nothing**
+"Home health promotion cards", "Device promotion cards" and "Announcement banner" were declared in settings but never read by any hook (banner clearing is gated by the master switch only, because the banner getter carries no page context). Switch count: 19 → 16.
+
+**Note: VIP promo popup still unverified**
+The popup fix shipped in 1.0.9 (`MembershipDialogManager.showMembershipExpiredFaceDialog` skipped, caller's dismiss callback preserved for the birthday-medal flow) is included here as-is. It is server-driven and cannot be reproduced on demand, so it remains unverified on device.
+
+### 中文
+
+**重要：设置界面重构**
+设置页从一列 19 行平铺列表改成分组卡片，按「它属于哪个界面」找开关，而不是一路滑：
+`总开关`（单独一张卡，带「已启用 x/11」摘要）· `开屏与弹窗` · `我的页` · `运动页` · `设备页` · `健康详情页` · `表盘` · `其他`。
+点分组标题即可收起/展开，折叠状态会记住（存在模块自己的 prefs）。总开关关闭时，所有依赖它的开关变灰不可点——"我开了单页开关怎么还有广告"这类困惑不会再出现。不引入任何新依赖、不加资源文件，仍是原生 View 手写，APK 体积不变。
+
+**移除：三个无效开关**
+「首页健康界面推广卡片」「设备界面推广卡片」「公告 banner」三个开关只存在于设置页，hook 侧从未读取（banner 清空只受总开关控制，因为 banner getter 没有页面上下文，做不了逐页控制）。开关数 19 → 16。
+
+**说明：会员推广弹窗仍未验证**
+1.0.9 交付的弹窗拦截（跳过 `MembershipDialogManager.showMembershipExpiredFaceDialog`，并保留调用方 dismiss 回调以不影响生日勋章流程）在本版原样包含。该弹窗由服务端下发、无法按需复现，故仍未真机验证。
+
+---
+
 ## v1.0.9 (versionCode 29)
 
 ### English

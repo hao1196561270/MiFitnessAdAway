@@ -4,7 +4,7 @@ English | [中文](README_zh.md)
 
 Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health/com.xiaomi.wearable` 3.0+), built as a modern **libxposed API 102** LSPosed module (requires LSPosed ≥ v2.1.1 / KernelSU).
 
-> **v1.0.9 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
+> **v1.1.0 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
 
 ## Features
 
@@ -27,17 +27,20 @@ Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health/com.xi
 | App update dialog ("Update available" prompt) | ✅ |
 | VIP promo popup ("会员限时低价福利" / "抢先购买") | ⚠️ unverified (server-driven, cannot be reproduced on demand) |
 
-The module app ships with a **settings UI** with 19 toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
+The module app ships with a **grouped-card settings UI** with 16 toggles (libxposed RemotePreferences, changes take effect after restarting the target app). Switch groups follow the page they belong to, each group collapses by tapping its title (the collapsed state is remembered), and the top card shows a "enabled x/11" summary together with the master switch:
 
-- Master (enable ad-removal)
-- Home / device / mine VIP / mine doctor / sport carousel / sport operation / splash / announcement / app-update-dialog / weight-plan / vip-promo-popup toggles
-- Health consultation card (Sleep / Heart rate / SpO₂ / Stress pages)
-- Sleep research / improvement cards
-- Device red dots (bottom nav + system settings entry)
-- Watchface auto-export (experimental, off by default)
-- Anti-hook detection (`SensorHelper.A()/D()` → 0)
-- **Hide launcher icon** (applies instantly, no restart needed; the settings page stays reachable from LSPosed)
-- Debug log
+| Card | Switches |
+|---|---|
+| Master | ad-removal master (own card, with the enabled-count summary) |
+| Splash & popups | splash ads · app-update dialog · VIP promo popup |
+| Mine | VIP membership card · doctor consultation card |
+| Sport | carousel cards · operation cards (below "training index") |
+| Device | red dots (bottom nav + system settings entry) |
+| Health detail | consultation cards (Sleep / Heart rate / SpO₂ / Stress) · sleep research/improvement cards · weight plan card |
+| Watchface | trial watchface auto-export (experimental, off by default) |
+| Other | anti-hook detection (`SensorHelper.A()/D()` → 0) · debug log · **hide launcher icon** (applies instantly, no restart needed) |
+
+While the master switch is off, every switch that depends on it is dimmed and not tappable; debug log and hide-icon stay usable because they are not gated by it.
 
 The settings UI follows the system dark/light theme.
 
