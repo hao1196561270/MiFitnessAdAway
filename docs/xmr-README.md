@@ -17,9 +17,10 @@ Remove ads from 小米运动健康 (`com.mi.health/com.xiaomi.wearable` 3.0+) - 
 - Weight page personalized plan card / 体重页个性化减重方案栏
 - Trial watchface auto-export (re-ID'd → Download/, third-party import) + cleanup protection / 试用表盘自动导出（换新 ID → Download/，第三方导入）+ 防删除保护
 - App update dialog ("Update available" prompt) / 应用更新弹窗（"发现新版本"提示）
+- VIP promo popup ("会员限时低价福利" / "抢先购买", shipped unverified) / 会员推广弹窗（"会员限时低价福利"/"抢先购买"，未验证发布）
 
-A built-in settings UI with 18 toggles is included (dark/light theme aware).
-内置设置界面（18 个开关，跟随系统深浅色）。
+A built-in settings UI with 19 toggles is included (dark/light theme aware).
+内置设置界面（19 个开关，跟随系统深浅色）。
 
 ## Requirements / 要求
 

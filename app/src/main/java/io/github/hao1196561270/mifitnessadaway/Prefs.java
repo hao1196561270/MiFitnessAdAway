@@ -25,6 +25,7 @@ public final class Prefs {
     public static final String KEY_ENABLE_ANNOUNCE = "enable_announce";
     public static final String KEY_ENABLE_APP_UPDATE = "enable_app_update";
     public static final String KEY_ENABLE_WEIGHT_PLAN = "enable_weight_plan";
+    public static final String KEY_ENABLE_VIP_POPUP = "enable_vip_popup";
     public static final String KEY_ENABLE_ANTI_DETECT = "enable_anti_detect";
     public static final String KEY_DEBUG_LOG = "debug_log";
     public static final String KEY_HIDE_ICON = "hide_icon";

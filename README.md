@@ -4,7 +4,7 @@ English | [中文](README_zh.md)
 
 Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health/com.xiaomi.wearable` 3.0+), built as a modern **libxposed API 102** LSPosed module (requires LSPosed ≥ v2.1.1 / KernelSU).
 
-> **v1.0.8 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
+> **v1.0.9 verified on device** (OnePlus PLQ110 / Android 16 / KernelSU / LSPosed 2.1.1): splash / home / sport / device / mine / health detail tabs cleaned, all normal features intact; trial watchfaces auto-export for third-party import.
 
 ## Features
 
@@ -25,11 +25,12 @@ Remove ads from Xiaomi Mi Fitness (Xiaomi Sports & Health, `com.mi.health/com.xi
 | Weight page personalized plan card ("个性化减重方案") | ✅ |
 | Trial watchface auto-export (re-ID'd → Download/, third-party import) + cleanup protection | ✅ (experimental) |
 | App update dialog ("Update available" prompt) | ✅ |
+| VIP promo popup ("会员限时低价福利" / "抢先购买") | ⚠️ unverified (server-driven, cannot be reproduced on demand) |
 
-The module app ships with a **settings UI** with 18 toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
+The module app ships with a **settings UI** with 19 toggles (libxposed RemotePreferences, changes take effect after restarting the target app):
 
 - Master (enable ad-removal)
-- Home / device / mine VIP / mine doctor / sport carousel / sport operation / splash / announcement / app-update-dialog / weight-plan toggles
+- Home / device / mine VIP / mine doctor / sport carousel / sport operation / splash / announcement / app-update-dialog / weight-plan / vip-promo-popup toggles
 - Health consultation card (Sleep / Heart rate / SpO₂ / Stress pages)
 - Sleep research / improvement cards
 - Device red dots (bottom nav + system settings entry)
@@ -50,6 +51,7 @@ The settings UI follows the system dark/light theme.
 - **Watchface auto-export (experimental)**: after a trial download, the cached `resource.bin` is re-ID'd (`12→19` prefix swap, same length) and written to `Download/` under its Chinese name for third-party import; exported IDs are filtered out of the server-side cleanup list so sideloaded faces survive sync; exported cache is removed whole-directory on the next scan (snapshot-based, with handoff/push guards); every scan reports via Toast/notification.
 
 - **App update dialog**: `AppUpgradeUtil.showUpdateDialogIfNeed` is skipped, so the "Update available" popup never shows (background version check still runs; manual update check on the Mine page is unaffected).
+- **VIP promo popup**: `MembershipDialogManager.showMembershipExpiredFaceDialog` is skipped, so the full-screen membership marketing popup never appears; the caller's dismiss callback is still invoked so the birthday-medal flow it continues is left intact. Only this automatic chain is blocked — the user-initiated purchase dialog (`showMembershipDialog`, opened by tapping "开通会员") is untouched.
 - **RN title cards**: Weight ("个性化减重方案"), Stress ("健康问诊") and Sleep ("健康研究/睡眠改善计划") cards are removed whole by title-text view-tree scan on the shared RN host (`YRNCFragment`), since these pages are React Native with server-driven copy and no stable data hooks.
 
 ## Requirements

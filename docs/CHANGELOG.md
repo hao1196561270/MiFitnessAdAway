@@ -1,5 +1,25 @@
 # Changelog 更新日志
 
+## v1.0.9 (versionCode 29)
+
+### English
+
+**New: VIP promo popup removal**
+The full-screen membership marketing popup ("会员限时低价福利" / "腕上时尚" / "抢先购买", reported in issue #8) is now skipped via a new toggle (18 → 19, default on). The chain is `MainActivity.dealWithMedal()` → `MembershipHelper.showVipExpiredFaceDialog()` → `MembershipDialogManager.requestMembershipExpiredFaceDialog()` → `showMembershipExpiredFaceDialog()`; blocking the last step means the popup never appears. The caller's dismiss callback is still invoked, so the birthday-medal flow it continues is left intact. Only this automatic chain is blocked — the user-initiated purchase dialog (`showMembershipDialog`, opened by tapping "开通会员") is untouched.
+
+**Note: not verified on device**
+This popup is server-driven and only appears on schedule, so the fix could not be reproduced and verified locally. It ships as-is in 1.0.9: if the popup still shows after a few days, please reopen issue #8 with a screenshot.
+
+### 中文
+
+**新增：会员推广弹窗去除**
+全屏会员营销弹窗（"会员限时低价福利"/"腕上时尚"/"抢先购买"，issue #8 报告）新增开关去除（18 → 19 个，默认开启）。链路为 `MainActivity.dealWithMedal()` → `MembershipHelper.showVipExpiredFaceDialog()` → `MembershipDialogManager.requestMembershipExpiredFaceDialog()` → `showMembershipExpiredFaceDialog()`，拦最后一步即弹窗不出现。同时仍回调调用方的 dismiss 回调，保证它继续拉取的生日勋章流程不受影响。只拦这条自动链路——用户主动点"开通会员"的购买弹窗（`showMembershipDialog`）不受影响。
+
+**说明：未在本机验证**
+该弹窗由服务端下发、按时机触发，无法在本机复现验证，1.0.9 按现状发布。若过几天仍会弹出，请在 issue #8 附截图重开。
+
+---
+
 ## v1.0.8 (versionCode 28)
 
 ### English

@@ -223,6 +223,10 @@ public class AdAwayModule extends XposedModule {
         if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_APP_UPDATE)) {
             hookAppUpdateDialog(cl);
         }
+        // 会员推广弹窗（「会员限时低价福利 / 抢先购买」营销弹窗）
+        if (Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_VIP_POPUP)) {
+            hookVipPopup(cl);
+        }
     }
 
     // ===================== banner 数据 getter（总开关） =====================
@@ -2128,5 +2132,64 @@ public class AdAwayModule extends XposedModule {
                 return null;
             });
         });
+    }
+
+    // ===================== 会员推广弹窗 =====================
+
+    /**
+     * 去除会员营销弹窗（「会员限时低价福利 / 腕上时尚 / 抢先购买」全屏弹窗）。
+     * 链路（issue #8 实机截图核对）：
+     *   MainActivity.dealWithMedal() → MembershipHelper.showVipExpiredFaceDialog()
+     *   → MembershipDialogManager.requestMembershipExpiredFaceDialog()
+     *   → showMembershipExpiredFaceDialog() → MembershipExpiredFaceDialog.show()
+     * 在 show 处跳过即弹窗不出现。
+     * 关键：必须回调第 3 参 dismissAction——dealWithMedal 传进来的回调负责
+     * 继续拉生日勋章，不回调会误伤勋章流程（弹窗没了但功能也断了）。
+     * 只拦这条自动弹的营销链路；用户主动点「开通会员」的购买弹窗
+     * （showMembershipDialog）不拦。
+     */
+    private void hookVipPopup(ClassLoader cl) throws Throwable {
+        tryHook("MembershipDialogManager.showMembershipExpiredFaceDialog (vip popup)", () -> {
+            Class<?> clazz = Class.forName(
+                    "com.xiaomi.fitness.membership.dialog.MembershipDialogManager", true, cl);
+            Class<?> fa = Class.forName("androidx.fragment.app.FragmentActivity", true, cl);
+            Class<?> data = Class.forName(
+                    "com.xiaomi.fitness.membership.export.data.VipExpiredFaceData", true, cl);
+            Class<?> fn0 = Class.forName("kotlin.jvm.functions.Function0", true, cl);
+            Method m = clazz.getDeclaredMethod("showMembershipExpiredFaceDialog", fa, data, fn0);
+            m.setAccessible(true);
+            hook(m).intercept(chain -> {
+                if (!Prefs.enabled(mPrefs, Prefs.KEY_ENABLE_VIP_POPUP)) {
+                    return chain.proceed();
+                }
+                invokeDismissCallback(chain.getArg(2), fn0);
+                if (debugLog()) {
+                    log(Log.INFO, TAG, "vip popup blocked");
+                }
+                return null;
+            });
+        });
+    }
+
+    /**
+     * 反射调用 kotlin Function0（零参方法）。弹窗的 dismissAction 靠它继续
+     * 后续流程，漏调会断链；调用失败只记日志，绝不抛出去影响拦截。
+     */
+    private void invokeDismissCallback(Object fn, Class<?> fn0) {
+        if (fn == null || fn0 == null) {
+            return;
+        }
+        try {
+            for (Method cand : fn0.getMethods()) {
+                if (cand.getParameterTypes().length == 0) {
+                    cand.setAccessible(true);
+                    cand.invoke(fn);
+                    return;
+                }
+            }
+            log(Log.ERROR, TAG, "dismiss callback: no zero-arg method on " + fn0.getName());
+        } catch (Throwable t) {
+            log(Log.ERROR, TAG, "dismiss callback failed", t);
+        }
     }
 }
