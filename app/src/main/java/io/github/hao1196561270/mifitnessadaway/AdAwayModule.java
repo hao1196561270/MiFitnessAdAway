@@ -231,6 +231,10 @@ public class AdAwayModule extends XposedModule {
         if (dndSync()) {
             hookDndSync(cl);
         }
+        // Health Connect 导出（独立开关，默认开；不受总开关约束）
+        if (healthConnectExport()) {
+            hookHealthConnect(cl);
+        }
     }
 
     // ===================== banner 数据 getter（总开关） =====================
@@ -2339,6 +2343,134 @@ public class AdAwayModule extends XposedModule {
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "dismiss callback failed", t);
         }
+    }
+
+    // ===================== Health Connect 导出 =====================
+
+    /**
+     * 只改 HealthConnectComponent.checkAndStartSync 里的 isInland。
+     * :device 启动时的触发器、日数据、运动报告和变更接收器。
+     * 授权后要重启，:device 才会走进这里。
+     */
+    /** Health Connect 导出是否开启（独立开关，默认开；不受总开关约束） */
+    private boolean healthConnectExport() {
+        return Prefs.isEnabled(mPrefs, Prefs.KEY_ENABLE_HEALTH_CONNECT, true);
+    }
+
+    /** getAuthTypeNameStr(2) → 分享服务 */
+    private static final int AUTH_TYPE_SHARE_SERVICE = 2;
+
+    private void hookHealthConnect(ClassLoader cl) throws Throwable {
+        tryHook("RegionExtKt.isInland (health connect sync)", () -> {
+            Class<?> regionExt = Class.forName(
+                    "com.xiaomi.fitness.login.export.RegionExtKt", false, cl);
+            Class<?> regionManager = Class.forName(
+                    "com.xiaomi.fitness.login.export.RegionManager", false, cl);
+            Method m = regionExt.getDeclaredMethod("isInland", regionManager);
+            m.setAccessible(true);
+            hook(m).intercept(chain -> {
+                if (!healthConnectExport() || !calledFromHealthConnectSync()) {
+                    return chain.proceed();
+                }
+                if (debugLog()) {
+                    log(Log.INFO, TAG, "health connect: allow sync on mainland");
+                }
+                return false;
+            });
+        });
+
+        tryHook("AuthConfigListAdapter.convertAuthConfigListToUiModelList (health connect row)", () -> {
+            Class<?> adapter = Class.forName(
+                    "com.xiaomi.fitness.mine.personal.data.management.recycler.AuthConfigListAdapter",
+                    false, cl);
+            Method convert = adapter.getDeclaredMethod(
+                    "convertAuthConfigListToUiModelList", List.class);
+            convert.setAccessible(true);
+            final Method addTitle = adapter.getDeclaredMethod(
+                    "addTitleIfNeed", int.class, List.class);
+            final Method addRow = adapter.getDeclaredMethod(
+                    "addHealthConnectToUiModelIfNeeded", int.class, List.class);
+            addTitle.setAccessible(true);
+            addRow.setAccessible(true);
+            hook(convert).intercept(chain -> {
+                Object list = chain.proceed();
+                if (!healthConnectExport() || !(list instanceof List)) {
+                    return list;
+                }
+                @SuppressWarnings("unchecked")
+                List<Object> rows = (List<Object>) list;
+                if (containsHealthConnectRow(rows)) {
+                    return list;
+                }
+                Object adapterObj = chain.getThisObject();
+                int insertAt = indexAfterShareServiceTitle(rows);
+                if (insertAt < 0) {
+                    addTitle.invoke(adapterObj, AUTH_TYPE_SHARE_SERVICE, rows);
+                    addRow.invoke(adapterObj, AUTH_TYPE_SHARE_SERVICE, rows);
+                } else {
+                    List<Object> tail = new ArrayList<>(rows.subList(insertAt, rows.size()));
+                    rows.subList(insertAt, rows.size()).clear();
+                    addRow.invoke(adapterObj, AUTH_TYPE_SHARE_SERVICE, rows);
+                    rows.addAll(tail);
+                }
+                if (debugLog()) {
+                    log(Log.INFO, TAG, "health connect: row inserted into share service");
+                }
+                return list;
+            });
+        });
+
+    /** isInland 的调用方是 Health Connect 启动同步，才改返回值。 */
+    private boolean calledFromHealthConnectSync() {
+        StackTraceElement[] stack = new Throwable().getStackTrace();
+        int limit = Math.min(stack.length, 30);
+        for (int i = 0; i < limit; i++) {
+            String name = stack[i].getClassName();
+            if (name != null && name.contains("HealthConnectComponent")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 分享服务标题的下一行。没有这一组时返回 -1。 */
+    private int indexAfterShareServiceTitle(List<?> rows) {
+        for (int i = 0; i < rows.size(); i++) {
+            Object row = rows.get(i);
+            if (row == null) {
+                continue;
+            }
+            try {
+                Object type = row.getClass().getMethod("getAuthType").invoke(row);
+                Object title = row.getClass().getMethod("getTitle").invoke(row);
+                if (type instanceof Integer
+                        && ((Integer) type).intValue() == AUTH_TYPE_SHARE_SERVICE
+                        && title != null) {
+                    return i + 1;
+                }
+            } catch (Throwable ignored) {
+                // 行模型对不上就继续找
+            }
+        }
+        return -1;
+    }
+
+    /** 列表里是否已有官方 Health Connect 行（appId = -107）。 */
+    private boolean containsHealthConnectRow(List<?> rows) {
+        for (Object row : rows) {
+            if (row == null) {
+                continue;
+            }
+            try {
+                Object id = row.getClass().getMethod("getAppId").invoke(row);
+                if (id instanceof Long && ((Long) id).longValue() == -107L) {
+                    return true;
+                }
+            } catch (Throwable ignored) {
+                // 行模型对不上就当成没有，继续尝试插入
+            }
+        }
+        return false;
     }
 
     // ===================== 手环 / 手机勿扰同步 =====================

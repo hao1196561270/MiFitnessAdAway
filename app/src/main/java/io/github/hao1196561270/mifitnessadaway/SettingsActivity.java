@@ -39,7 +39,7 @@ import io.github.libxposed.service.XposedServiceHelper;
  * - 摘要只统计「去广告类」子开关；总开关关闭时显示已停用
  * - 折叠状态存本模块自己的 SharedPreferences（不碰 RemotePreferences）
  * - 置灰范围＝受总开关影响的开关（去广告类 + 表盘导出）；
- *   「调试日志」「隐藏桌面图标」不受总开关影响，保持可点
+ *   「调试日志」「隐藏桌面图标」「勿扰同步」「Health Connect 导出」不受总开关影响，保持可点
  */
 public class SettingsActivity extends Activity implements XposedServiceHelper.OnServiceListener {
 
@@ -179,7 +179,7 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
         summaryHint.setTextSize(12);
         summaryHint.setTextColor(subTextColor());
         summaryHint.setPadding(dp(16), 0, dp(16), dp(2));
-        summaryHint.setText("「调试日志」「隐藏桌面图标」「勿扰同步」不受总开关影响");
+        summaryHint.setText("「调试日志」「隐藏桌面图标」「勿扰同步」「Health Connect 导出」不受总开关影响");
         topCard.addView(summaryHint);
 
         TextView dndHint = new TextView(this);
@@ -204,6 +204,7 @@ public class SettingsActivity extends Activity implements XposedServiceHelper.On
         addGroup(root, "我的页", new String[][]{
                 {"我的界面 VIP 会员卡", Prefs.KEY_ENABLE_MINE_VIP},
                 {"我的界面健康问诊卡", Prefs.KEY_ENABLE_MINE_DOCTOR},
+                {"Health Connect 导出", Prefs.KEY_ENABLE_HEALTH_CONNECT},
         });
         addGroup(root, "运动页", new String[][]{
                 {"运动界面轮播卡片", Prefs.KEY_ENABLE_SPORT_BANNER},
